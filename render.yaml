@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: salita-municipal-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:online
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.16.0
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DATABASE
+        value: salita_municipal_demo
+      - key: SUPERADMIN_PASSWORD
+        sync: false
+      - key: FRONTEND_ORIGIN
+        sync: false
