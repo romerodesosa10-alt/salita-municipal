@@ -13,7 +13,7 @@ npm start
 
 Abrir **http://127.0.0.1:5173**. `npm start` inicia la API y Vite; Ctrl+C detiene ambos.
 
-Accesos educativos iniciales: **admin / Salita2026!** para la salita central y **superadmin / SuperSalita2026!** para el portal global. Los clientes crean su cuenta desde **Registrate acá**. Los registros iniciales son ficticios. Ver [PORTALES.md](PORTALES.md).
+Accesos educativos iniciales: **admin / Salita2026!** para la salita central y **superadmin / SuperSalita2026!** para el portal global. Los clientes crean su cuenta desde **Registrate acá**. Los registros iniciales son ficticios.
 
 También se pueden iniciar por separado en dos terminales:
 
