@@ -26,8 +26,15 @@ const seed = {
 let store;
 try {
   if (mongoUri) store = await openMongoStore(mongoUri, process.env.MONGODB_DATABASE || 'salita_municipal');
-} catch {
-  throw new Error('No se pudo conectar a MongoDB. Revisá la URI, el usuario y la lista de IP permitidas.');
+} catch (error) {
+  const message = String(error.message);
+  const category = error.name === 'MongoParseError' ? 'formato de la URI' :
+    error.code === 18 || /bad auth|authentication failed/i.test(message) ? 'credenciales rechazadas por Atlas' :
+    error.code === 13 || /not authorized|unauthorized/i.test(message) ? 'permisos insuficientes en la base' :
+    /ENOTFOUND|ENODATA|ESERVFAIL|querySrv/i.test(message) ? 'el servidor DNS no pudo resolver el clúster' :
+    error.name === 'MongoServerSelectionError' ? 'conexión de red o acceso por IP' :
+    'error de conexión';
+  throw new Error('MongoDB Atlas: ' + category + '.');
 }
 
 if (!store) mkdirSync(dirname(resolve(dataPath)), { recursive: true });
