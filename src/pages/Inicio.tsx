@@ -18,7 +18,7 @@ export default function Inicio() {
                         <p>Información para vecinos y acceso al sistema de atención de la salita municipal.</p>
                         <a className={styles.button} href="#turnos">Cómo consultar por un turno</a>
                     </div>
-                    <img src="/images/salita-municipal.png" alt="Logo de la Salita Municipal" />
+                    <img src="/images/logo-salita-municipal-escudo.png" alt="Logo de la Salita Municipal" />
                 </section>
                 <section id="turnos" className={styles.information} aria-labelledby="titulo-turnos">
                     <article>
