@@ -11,3 +11,33 @@ body{margin:0;font-family:Inter,"Segoe UI",sans-serif;color:var(--ink);backgroun
 .brand-image{display:block;position:relative;width:160px;aspect-ratio:3 / 2;overflow:hidden;border-radius:0;flex-shrink:0;background:transparent}.brand-image img{display:block;position:static;width:100%;height:100%;max-width:100%;object-fit:contain;transform:none}.sidebar .brand{margin:0 auto 28px}.sidebar{padding-top:22px}.login-story .brand{justify-content:center}.login-story .brand-image{width:240px;border:0;box-shadow:none}.login-story .story-illustration{display:none}.login-story .story-content{padding:25px 0}.registration-page>.brand .brand-image{width:185px}.registration-page>.brand{margin-bottom:22px}
 @media(max-width:900px){.sidebar .brand-image{width:145px}.sidebar .brand{margin-bottom:25px}.login-story .brand-image{width:200px}}@media(max-width:650px){.login-story{padding:18px 25px 15px}.login-story .brand-image{width:165px}.login-story .story-content{padding:12px 0 0;text-align:center}.login-story .story-content h1{font-size:25px;margin:0}.registration-page>.brand .brand-image{width:150px}.sidebar .brand-image{width:165px}}
 .sidebar{overflow-y:auto}.sidebar nav{flex-shrink:0}
+
+.form-select.patient-status {
+  background-color: var(--patient-status-background);
+  border-color: var(--patient-status-border);
+  color: var(--patient-status-text);
+  font-weight: 650;
+  padding-inline-end: 2.5rem;
+}
+.patient-status[data-status="en-espera"] {
+  --patient-status-background: #fff4d9;
+  --patient-status-border: #e3be66;
+  --patient-status-text: #684604;
+}
+.patient-status[data-status="atendido"] {
+  --patient-status-background: #e4f5eb;
+  --patient-status-border: #9dccad;
+  --patient-status-text: #19513a;
+}
+.patient-status[data-status="cancelado"] {
+  --patient-status-background: #fce8e7;
+  --patient-status-border: #e6a6a0;
+  --patient-status-text: #832e2b;
+}
+.form-select.patient-status:focus {
+  border-color: var(--patient-status-text);
+}
+.patient-status option {
+  background-color: #fff;
+  color: #263b32;
+}

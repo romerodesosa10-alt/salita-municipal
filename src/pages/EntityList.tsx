@@ -92,7 +92,7 @@ export default function EntityList({ entity }: { entity: Entity }) {
         checked={checked.has(row.id)} onChange={event => selectPatient(row.id, event.target.checked)}/>
       <Form.Group className="mt-2" controlId={'estado-' + row.id}>
         <Form.Label className="mb-1">Estado</Form.Label>
-        <Form.Select size="sm" value={(row as Paciente).estado ?? 'en-espera'} disabled={Boolean(busyId) || removing}
+        <Form.Select size="sm" className="patient-status" data-status={(row as Paciente).estado ?? 'en-espera'} value={(row as Paciente).estado ?? 'en-espera'} disabled={Boolean(busyId) || removing}
           onChange={event => void changePatientStatus(row.id, event.target.value as EstadoPaciente)}>
           {estadosPaciente.map(value => <option key={value} value={value}>{patientStatusLabels[value]}</option>)}
         </Form.Select>
