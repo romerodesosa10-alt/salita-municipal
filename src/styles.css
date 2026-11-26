@@ -187,3 +187,76 @@ body{margin:0;font-family:Inter,"Segoe UI",sans-serif;color:var(--ink);backgroun
   --bs-btn-hover-bg: #f6d99e;
   --bs-btn-hover-border-color: #cdad75;
 }
+
+/* Shared palette for the administration and patient portals. */
+.topbar {
+  background: linear-gradient(105deg, #fff 45%, #e9f8fc);
+  border-bottom-color: #bbded6;
+}
+
+.sidebar nav a { color: #28564c; }
+.sidebar nav a:hover { background: #e7f5fa; color: #075d78; }
+.sidebar nav a.active { background: #d9f4e9; color: #005741; font-weight: 750; }
+.main-content > .back-link, .registration-card .back-link { color: #00664f; }
+.page-heading h1, .registration-card h1 { color: #103b33; }
+.page-heading p, .registration-card > .muted { color: #395b55; }
+
+.main-content .btn-primary, .registration-card .btn-primary {
+  --bs-btn-bg: #00664f;
+  --bs-btn-border-color: #00664f;
+  --bs-btn-hover-bg: #004f3e;
+  --bs-btn-hover-border-color: #004f3e;
+  box-shadow: 0 4px 10px #00664f24;
+}
+
+.welcome-banner {
+  background: linear-gradient(115deg, #00664f, #075d78);
+  border-color: #00664f;
+  box-shadow: 0 12px 28px #0d574c26;
+}
+
+.welcome-banner h2 { color: #fff; font-weight: 750; }
+.welcome-banner p, .welcome-banner .banner-kicker { color: #e4f8ff; }
+.welcome-banner a { color: #fff; text-decoration: underline; text-underline-offset: .2em; }
+.welcome-banner .status-dot { background: #8df2c1; }
+.client-calendar, .art-spark { color: #a5eafa; }
+.art-circle { background: #ffffff18; border-color: #b7efff6b; }
+.art-calendar { color: #075d78; background: #f0fcff; box-shadow: 5px 9px 0 #9fe1ec58; }
+.art-pill { color: #075d78; }
+.art-pill .status-dot { background: #008668; }
+
+.stat-card, .record-card, .turno-card {
+  border-color: #b9ded0;
+  border-top: 3px solid #008668;
+  box-shadow: 0 6px 16px #12544410;
+}
+
+.stat-card:nth-child(even), .record-card:nth-child(even), .turno-card:nth-child(even) {
+  border-color: #b4dce9;
+  border-top-color: #087b9c;
+}
+
+.stat-card > strong, .record-card h2, .turno-card h2 { color: #103b33; font-weight: 750; }
+.stat-card > span, .record-subtitle, .record-line, .record-line svg { color: #395b55; }
+
+.list-panel, .upcoming-panel, .detail-summary { border-color: #b9ded0; }
+:is(.list-panel, .upcoming-panel) > .panel-heading {
+  background: #e4f8ef;
+  border-bottom: 1px solid #b9ded0;
+  color: #103b33;
+}
+
+.count-pill { background: #cbeee0; color: #005741; font-weight: 700; }
+.upcoming-panel .agenda-table th { background: #f0faf7; color: #24554b; font-weight: 700; }
+.upcoming-panel .agenda-table td { color: #395b55; }
+.upcoming-panel .agenda-table tbody tr:nth-child(even) { background: #f6fcfa; }
+
+.quick-panel, .form-help {
+  background: linear-gradient(145deg, #e2f5fc, #f7fdff);
+  border-color: #b4dce9;
+}
+
+.quick-panel p, .form-help p, .form-help small,
+.detail-summary small, .detail-summary span, .patient-details small { color: #395b55; }
+.detail-summary svg { color: #076584; }
+.registration-page { background: linear-gradient(145deg, #e3f8ee, #e4f6fc); }
