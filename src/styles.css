@@ -260,3 +260,6 @@ body{margin:0;font-family:Inter,"Segoe UI",sans-serif;color:var(--ink);backgroun
 .detail-summary small, .detail-summary span, .patient-details small { color: #395b55; }
 .detail-summary svg { color: #076584; }
 .registration-page { background: linear-gradient(145deg, #e3f8ee, #e4f6fc); }
+
+.turno-card .card-footer { flex-wrap: wrap; }
+.turno-card .card-footer .patient-status { flex: 1 1 8rem; }

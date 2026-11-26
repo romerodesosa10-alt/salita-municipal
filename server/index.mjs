@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from '
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appointmentMinutes, isScheduledAppointment } from '../shared/agenda.ts';
-import { estadoPacienteSchema, quitarPacientesSchema, schemas } from '../shared/schemas.ts';
+import { estadoPacienteSchema, estadoTurnoSchema, quitarPacientesSchema, schemas } from '../shared/schemas.ts';
 import { initializeAccounts, accountService } from './accounts.mjs';
 import express from 'express';
 import { openMongoStore } from './mongo-store.mjs';
@@ -71,7 +71,7 @@ async function handleApi(req, res) {
     const actor = accounts.authenticate(req);
     if (!actor) return respond(res, 401, 'Tu sesión venció. Volvé a ingresar.');
     if (await accounts.privateRoute(path, req, res, actor)) return;
-    const match = path.match(/^\/api\/v1\/(pacientes|medicos|consultorios|turnos)(?:\/([^/]+))?(?:\/(atender))?$/);
+    const match = path.match(/^\/api\/v1\/(pacientes|medicos|consultorios|turnos)(?:\/([^/]+))?(?:\/(atender|estado))?$/);
     if (!match) return respond(res, 404, 'La ruta no existe.');
     const [, entity, id, action] = match;
     const requestedSite = url.searchParams.get('salitaId');
@@ -159,10 +159,21 @@ async function handleApi(req, res) {
       db[entity].push(record); try { await save(); } catch (error) { db[entity].pop(); throw error; }
       return respond(res, 201, 'Registro creado correctamente.', entity === 'turnos' ? populate(record) : record);
     }
-    if (entity === 'turnos' && id && action === 'atender' && req.method === 'PATCH') {
+    if (entity === 'turnos' && id && ['atender', 'estado'].includes(action) && req.method === 'PATCH') {
       const record = scoped.find(x => x.id === id); if (!record) return respond(res, 404, 'No se encontró el turno.');
-      const previous = record.estado; record.estado = 'atendido'; try { await save(); } catch (error) { record.estado = previous; throw error; }
-      return respond(res, 200, 'Turno marcado como atendido.', populate(record));
+      const parsed = estadoTurnoSchema.safeParse(action === 'atender' ? { estado: 'atendido' } : await readBody(req));
+      if (!parsed.success) return respond(res, 400, 'Elegí un estado válido.');
+      const { estado } = parsed.data;
+      const previous = record.estado;
+      if (estado === 'pendiente' && previous !== 'pendiente') {
+        const conflict = db.turnos.some(x => x.id !== record.id && x.estado === 'pendiente' &&
+          Math.abs(Date.parse(x.fechaTurno) - Date.parse(record.fechaTurno)) < appointmentMinutes * 60 * 1000 &&
+          (x.medico === record.medico || x.paciente === record.paciente || x.consultorio === record.consultorio));
+        if (conflict) return respond(res, 409, 'Ese horario ya está ocupado para el paciente, el médico o el consultorio.');
+      }
+      record.estado = estado;
+      try { await save(); } catch (error) { record.estado = previous; throw error; }
+      return respond(res, 200, 'Estado del turno actualizado.', populate(record));
     }
     return respond(res, 405, 'Método no permitido.');
   } catch (error) { respond(res, error.status || 500, error.status ? error.message : 'No se pudo procesar la operación.'); }

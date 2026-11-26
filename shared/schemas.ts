@@ -44,7 +44,16 @@ export type EstadoPaciente = typeof estadosPaciente[number];
 export interface Paciente extends PacienteInput { id: string; estado?: EstadoPaciente }
 export interface Medico extends MedicoInput { id: string }
 export interface Consultorio extends ConsultorioInput { id: string }
-export interface ITurno { id: string; salitaNombre?: string; paciente: Paciente | null; medico: Medico | null; consultorio: Consultorio | null; fechaTurno: string; estado: 'pendiente' | 'atendido'; especialidad: string; observaciones: string }
+export const estadosTurno = ['pendiente', 'atendido', 'cancelado'] as const;
+export const estadoTurnoSchema = z.object({ estado: z.enum(estadosTurno) }).strict();
+export type EstadoTurno = typeof estadosTurno[number];
+export const estadoTurnoLabels: Record<EstadoTurno, string> = {
+  pendiente: 'En espera',
+  atendido: 'Atendido',
+  cancelado: 'Cancelado',
+};
+
+export interface ITurno { id: string; salitaNombre?: string; paciente: Paciente | null; medico: Medico | null; consultorio: Consultorio | null; fechaTurno: string; estado: EstadoTurno; especialidad: string; observaciones: string }
 export interface EntityMap { pacientes: Paciente; medicos: Medico; consultorios: Consultorio; turnos: ITurno }
 export type Role = 'superadmin' | 'admin' | 'cliente';
 export interface User { id: string; nombre: string; usuario: string; rol: Role; salitaId: string | null; salitaNombre: string | null; pacienteId: string | null }
