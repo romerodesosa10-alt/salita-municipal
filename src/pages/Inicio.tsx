@@ -15,7 +15,7 @@ export default function Inicio() {
                 <section className={styles.hero} aria-labelledby="titulo">
                     <div>
                         <h1 id="titulo">Tu centro de salud, cerca.</h1>
-                        <p>Información para vecinos y acceso al sistema de atención de la salita municipal.</p>
+                        <p>Información para el paciente y acceso al sistema de atención de la sala municipal.</p>
                         <a className={styles.button} href="#turnos">Cómo consultar por un turno</a>
                     </div>
                     <img src="/images/logo-salita-municipal-escudo.png" alt="Logo de la Salita Municipal" />
