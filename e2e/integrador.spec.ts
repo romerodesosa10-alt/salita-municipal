@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 test('protege las rutas y conserva el destino después del login', async ({ page }) => {
-  await page.goto('/pacientes'); await expect(page).toHaveURL(/\/login$/); await expect(page.getByRole('heading', { name: 'Bienvenido de nuevo' })).toBeVisible();
+  await page.goto('/pacientes'); await expect(page).toHaveURL(/\/login$/); await expect(page.getByRole('heading', { name: 'BIENVENIDO DE NUEVO' })).toBeVisible();
   await page.getByLabel('Usuario', { exact: true }).fill('admin'); await page.getByLabel('Contraseña', { exact: true }).fill('incorrecta'); await page.getByRole('button', { name: 'Ingresar al sistema' }).click(); await expect(page.getByRole('alert')).toContainText('incorrectos');
   await page.getByLabel('Contraseña', { exact: true }).fill('Salita2026!'); await page.getByRole('button', { name: 'Ingresar al sistema' }).click(); await expect(page).toHaveURL(/\/pacientes$/); await page.reload(); await expect(page.getByRole('heading', { name: 'Pacientes', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Cerrar sesión' }).click(); await expect(page).toHaveURL(/\/login$/); await page.goto('/turnos'); await expect(page).toHaveURL(/\/login$/);

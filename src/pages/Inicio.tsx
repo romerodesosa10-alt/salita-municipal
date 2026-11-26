@@ -5,7 +5,7 @@ export default function Inicio() {
     return (
         <div className={styles.site}>
             <header className={styles.header}>
-                <a className={styles.brand} href="/">Salita Municipal</a>
+                <a className={styles.brand} href="/">SALITA MUNICIPAL</a>
                 <nav aria-label="Navegación principal">
                     <a href="#turnos">Turnos</a>
                     <Link to="/login">Ingresar</Link>
@@ -18,7 +18,7 @@ export default function Inicio() {
                         <p>Información para el paciente y acceso al sistema de atención de la sala municipal.</p>
                         <a className={styles.button} href="#turnos">Cómo consultar por un turno</a>
                     </div>
-                    <img src="/images/logo-salita-municipal-escudo.png" alt="Logo de la Salita Municipal" />
+                    <img src="/images/logo-salita-municipal-transparente.png" alt="Logo de la SALITA MUNICIPAL" />
                 </section>
                 <section id="turnos" className={styles.information} aria-labelledby="titulo-turnos">
                     <article>
@@ -32,7 +32,7 @@ export default function Inicio() {
                     </article>
                 </section>
             </main>
-            <footer className={styles.footer}>Salita Municipal</footer>
+            <footer className={styles.footer}>SALITA MUNICIPAL</footer>
         </div>
     );
 }
