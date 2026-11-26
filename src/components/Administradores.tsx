@@ -70,14 +70,14 @@ export default function Administradores({ users, salitas, onChange }: {
   return <>
     {users.length === 0 ? <p className="muted">Todavía no hay administradores registrados.</p> :
       <div className="table-responsive">
-        <table className="agenda-table">
+        <table className="agenda-table administrators-table">
           <thead><tr><th>Nombre</th><th>Usuario</th><th>Salita asignada</th><th>Estado</th><th>Acciones</th></tr></thead>
           <tbody>{users.map(admin => <tr key={admin.id}>
             <td>{admin.nombre}</td><td>{admin.usuario}</td><td>{admin.salitaNombre}</td>
             <td><Badge bg={admin.bloqueado ? 'secondary' : 'success'}>{admin.bloqueado ? 'Bloqueado' : 'Activo'}</Badge></td>
             <td><div className="d-flex flex-wrap gap-2">
               <Button size="sm" variant="outline-secondary" onClick={() => open('editar', admin)}>Editar</Button>
-              <Button size="sm" variant="outline-secondary" onClick={() => open('estado', admin)}>{admin.bloqueado ? 'Desbloquear' : 'Bloquear'}</Button>
+              <Button size="sm" variant={admin.bloqueado ? 'outline-success' : 'outline-warning'} onClick={() => open('estado', admin)}>{admin.bloqueado ? 'Desbloquear' : 'Bloquear'}</Button>
               <Button size="sm" variant="outline-secondary" onClick={() => open('password', admin)}>Restablecer contraseña</Button>
               <Button size="sm" variant="outline-danger" onClick={() => open('eliminar', admin)}>Eliminar</Button>
             </div></td>

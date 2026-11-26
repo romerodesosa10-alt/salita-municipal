@@ -87,3 +87,103 @@ body{margin:0;font-family:Inter,"Segoe UI",sans-serif;color:var(--ink);backgroun
 
 .login-form .back-link,.login-form > .eyebrow{color:#00664f}
 .login-form .form-control:focus{border-color:#00876e;box-shadow:0 0 0 3px #00876e25}
+
+.form-card:has(> form), .portal-columns > .form-card {
+  --form-accent: #00664f;
+  --form-tint: #e4f8ef;
+  border-color: #b9ded0;
+  border-top: 4px solid var(--form-accent);
+  box-shadow: 0 8px 24px #12544412;
+}
+
+.portal-columns > .form-card:nth-child(2) {
+  --form-accent: #076584;
+  --form-tint: #e4f6fc;
+  border-inline-color: #b4dce9;
+  border-bottom-color: #b4dce9;
+}
+
+.form-card:has(> form) .form-card-heading, .portal-columns .form-card-heading {
+  padding: 14px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--form-tint);
+  color: var(--form-accent);
+}
+
+.form-card .form-label {
+  color: #18483e;
+  font-size: .8125rem;
+  font-weight: 650;
+}
+
+.form-card :is(.form-control,.form-select):not(.is-invalid) {
+  background-color: #f8fcfb;
+  border-color: #a6c9bf;
+  color: #143f36;
+}
+
+.form-card :is(.form-control,.form-select):not(.is-invalid):focus {
+  background-color: white;
+  border-color: #00876e;
+  box-shadow: 0 0 0 3px #00876e2c;
+}
+
+.form-card .form-control::placeholder { color: #58746b; }
+
+.form-card:has(> form) .btn-primary {
+  --bs-btn-bg: var(--form-accent);
+  --bs-btn-border-color: var(--form-accent);
+  --bs-btn-hover-bg: #06483d;
+  --bs-btn-hover-border-color: #06483d;
+}
+
+.tenant-card {
+  background: linear-gradient(145deg, #e3f8ee, #f9fffc);
+  border-color: #b5dacd;
+  border-top: 4px solid #008668;
+}
+
+.tenant-card:nth-child(even) {
+  background: linear-gradient(145deg, #e1f5fd, #f8fdff);
+  border-color: #b1dbe8;
+  border-top-color: #087b9c;
+}
+
+.tenant-card svg { color: #00664f; }
+.tenant-card:nth-child(even) svg { color: #076584; }
+.tenant-card h3 { color: #103b33; font-weight: 750; }
+.tenant-card p { color: #395b55; }
+.tenant-card small {
+  display: inline-block;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: #fff;
+  color: #24554b;
+  font-weight: 650;
+}
+
+.administrators-table th {
+  background: #126859;
+  color: white;
+  font-size: .6875rem;
+  font-weight: 700;
+}
+
+.administrators-table td { color: #28534b; }
+.administrators-table td:first-child { font-weight: 750; }
+.administrators-table tbody tr:nth-child(even) { background: #eef8f5; }
+.administrators-table tbody tr:hover { background: #e4f5fa; }
+.administrators-table .btn-outline-secondary {
+  --bs-btn-color: #075d78;
+  --bs-btn-border-color: #97cbdc;
+  --bs-btn-hover-bg: #075d78;
+  --bs-btn-hover-border-color: #075d78;
+}
+
+.administrators-table .btn-outline-warning {
+  --bs-btn-color: #80500a;
+  --bs-btn-border-color: #cdad75;
+  --bs-btn-hover-bg: #f6d99e;
+  --bs-btn-hover-border-color: #cdad75;
+}
