@@ -6,10 +6,29 @@ async function hash(password, salt = randomBytes(16).toString('hex')) { return {
 export async function initializeAccounts(db, save, mongo = false) {
   let changed = false;
   if (!db.salitas) { db.salitas = [{ id: 'salita-principal', nombre: 'Salita Municipal Central', direccion: 'Dirección a completar' }]; changed = true; }
+  const itati = db.salitas.find(site => /^CAPS Itat[yi]$/i.test(site.nombre));
+  if (itati && itati.nombre !== 'CAPS Itati') {
+    itati.nombre = 'CAPS Itati';
+    changed = true;
+  }
+  for (const user of db.usuarios || []) {
+    if (user.rol !== 'admin' || user.salitaId !== itati?.id) continue;
+    const nombre = user.nombre.replace(/\bCAPS Itaty\b/gi, 'CAPS Itati');
+    const usuario = user.usuario.replaceAll('itaty', 'itati');
+    if (user.nombre !== nombre) { user.nombre = nombre; changed = true; }
+    if (user.usuario !== usuario && !db.usuarios.some(other => other.usuario === usuario || other.email.toLowerCase() === usuario)) {
+      user.usuario = usuario;
+      changed = true;
+    }
+    if (user.email === 'admin-itaty@example.test' && !db.usuarios.some(other => other.email.toLowerCase() === 'admin-itati@example.test')) {
+      user.email = 'admin-itati@example.test';
+      changed = true;
+    }
+  }
   for (const sede of [
     { id: 'sala-sarmiento', nombre: 'Sala Sarmiento' },
     { id: 'caps-belgrano', nombre: 'CAPS Belgrano' },
-    { id: 'caps-itaty', nombre: 'CAPS Itaty' },
+    { id: 'caps-itaty', nombre: 'CAPS Itati' },
   ]) {
     if (db.salitas.some(s => s.id === sede.id || s.nombre.toLowerCase() === sede.nombre.toLowerCase())) continue;
     db.salitas.push({ ...sede, direccion: 'Dirección a completar' });
