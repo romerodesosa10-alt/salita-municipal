@@ -39,6 +39,7 @@ export const registroSchema = z.object({ nombre: text('Nombre'), apellido: text(
 export const salitaSchema = z.object({ nombre: text('Nombre'), direccion: text('Dirección') }).strict();
 export const adminSchema = z.object({ nombre: text('Nombre'), email, usuario: username, password, salitaId: z.string().min(1, 'Seleccioná una salita.') }).strict();
 export const editarAdminSchema = adminSchema.omit({ password: true });
+export const restablecerAdminSchema = z.object({ nueva: password }).strict();
 export const estadoAdminSchema = z.object({ bloqueado: z.boolean() }).strict();
 export interface Administrador extends User { email: string; bloqueado: boolean }
 export function portalFor(rol: Role) { return rol === 'superadmin' ? '/superadmin' : rol === 'admin' ? '/admin' : '/mi-portal'; }

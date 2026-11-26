@@ -109,5 +109,29 @@ describe('API: autenticación, validaciones y persistencia', () => {
     expect((await request('/auth/me')).status).toBe(401);
     await login();
   });
+  it('restablece la contraseña de un administrador y revoca su sesión', async () => {
+    const signIn = (usuario: string, password: string) => request('/auth/login', 'POST', { usuario, password }, false);
+    const superSession = await signIn('superadmin', 'SuperSalita2026!');
+    token = (await superSession.json()).data.token;
+    const response = await request('/superadmin/administradores', 'POST', {
+      nombre: 'Administración de prueba', usuario: 'admin-recuperacion', email: 'recuperacion@example.test',
+      password: 'AnteriorPrueba2026!', salitaId: 'salita-principal',
+    });
+    expect(response.status).toBe(201);
+    const path = '/superadmin/administradores/' + (await response.json()).data.id;
+    const admin = await signIn('admin-recuperacion', 'AnteriorPrueba2026!');
+    const adminToken = (await admin.json()).data.token;
+    const superToken = token;
+    token = adminToken;
+    expect((await request(path, 'PATCH', { nueva: 'NuevaPrueba2026!' })).status).toBe(403);
+    token = superToken;
+    expect((await request(path, 'PATCH', { nueva: 'AnteriorPrueba2026!' })).status).toBe(400);
+    expect((await request(path, 'PATCH', { nueva: 'NuevaPrueba2026!' })).status).toBe(200);
+    token = adminToken;
+    expect((await request('/auth/me')).status).toBe(401);
+    expect((await signIn('admin-recuperacion', 'AnteriorPrueba2026!')).status).toBe(401);
+    expect((await signIn('admin-recuperacion', 'NuevaPrueba2026!')).status).toBe(200);
+    await login();
+  });
   it('cierra la sesión e invalida el token en el backend', async () => { expect((await request('/auth/logout', 'POST')).status).toBe(200); expect((await request('/pacientes')).status).toBe(401); });
 });

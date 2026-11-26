@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { adminSchema, cambiarPasswordSchema, editarAdminSchema, estadoAdminSchema, registroSchema, salitaSchema } from '../shared/schemas.ts';
+import { adminSchema, cambiarPasswordSchema, editarAdminSchema, estadoAdminSchema, registroSchema, restablecerAdminSchema, salitaSchema } from '../shared/schemas.ts';
 const derive = promisify(scrypt);
 async function hash(password, salt = randomBytes(16).toString('hex')) { return { salt, hash: (await derive(password, salt, 64)).toString('hex') }; }
 export async function initializeAccounts(db, save, mongo = false) {
@@ -129,6 +129,21 @@ export function accountService(db, save, respond, readBody) {
           await transaction(() => { target.bloqueado = data.bloqueado; });
           if (data.bloqueado) revokeSessions(target.id);
           respond(res, 200, data.bloqueado ? 'Administrador bloqueado.' : 'Administrador desbloqueado.', adminView(target));
+          return true;
+        }
+
+        if (body && Object.hasOwn(body, 'nueva')) {
+          const data = parse(restablecerAdminSchema, body, res);
+          if (!data) return true;
+          const current = await derive(data.nueva, target.password.salt, 64);
+          if (timingSafeEqual(current, Buffer.from(target.password.hash, 'hex'))) {
+            respond(res, 400, 'Elegí una contraseña distinta de la actual.');
+            return true;
+          }
+          const password = await hash(data.nueva);
+          await transaction(() => { target.password = password; });
+          revokeSessions(target.id);
+          respond(res, 200, 'Contraseña restablecida.');
           return true;
         }
 
