@@ -126,12 +126,23 @@ async function handleApi(req, res) {
       if (actor.rol === 'cliente' && entity === 'medicos') data = selected.map(({ id, nombre, apellido, especialidad, agenda }) => ({ id, nombre, apellido, especialidad, agenda }));
       return respond(res, 200, 'Consulta realizada.', id ? data[0] : data);
     }
-    if (req.method === 'POST' && !id) {
+    const editing = req.method === 'PATCH' && id && !action && ['medicos', 'consultorios'].includes(entity);
+    if (editing || (req.method === 'POST' && !id)) {
+      if (editing && actor.rol !== 'admin') return respond(res, 403, 'Solo la administración de la salita puede editar estos registros.');
+      const existing = editing ? scoped.find(row => row.id === id) : undefined;
+      if (editing && !existing) return respond(res, 404, 'No se encontró el registro.');
       const result = schemas[entity].safeParse(await readBody(req));
       if (!result.success) { const errors = {}; for (const issue of result.error.issues) errors[issue.path.join('.')] ??= issue.message; return respond(res, 400, 'Revisá los campos del formulario.', null, errors); }
       const data = result.data;
       const unique = { pacientes: 'dni', medicos: 'matricula', consultorios: 'numero' }[entity];
-      if (unique && db[entity].some(x => x.salitaId === salitaId && x[unique].toLowerCase() === data[unique].toLowerCase())) return respond(res, 409, 'Ya existe un registro con ese dato.', null, { [unique]: 'Este valor ya está registrado.' });
+      if (unique && db[entity].some(x => x.id !== existing?.id && x.salitaId === salitaId && x[unique].toLowerCase() === data[unique].toLowerCase())) return respond(res, 409, 'Ya existe un registro con ese dato.', null, { [unique]: 'Este valor ya está registrado.' });
+      if (existing) {
+        const index = db[entity].indexOf(existing);
+        const updated = { ...existing, ...data };
+        db[entity][index] = updated;
+        try { await save(); } catch (error) { db[entity][index] = existing; throw error; }
+        return respond(res, 200, 'Registro actualizado.', updated);
+      }
       if (entity === 'turnos') {
         if (actor.rol === 'cliente' && data.paciente !== actor.pacienteId) return respond(res, 403, 'Solo podés solicitar turnos para tu propia cuenta.');
         const errors = {};

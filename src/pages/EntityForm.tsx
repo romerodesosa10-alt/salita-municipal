@@ -1,6 +1,6 @@
 import BackLink from '../components/BackLink';
 import { useRef, useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button, Form } from 'react-bootstrap';
 import { ArrowLeft, Check, Info } from 'lucide-react';
 import { toast } from 'sonner';
@@ -105,10 +105,25 @@ function doctorGroups(doctors: Medico[], toOptions: (doctors: Medico[]) => Optio
   return groups;
 }
 
-function FormBody({ entity, fields: formFields, query = '', doctors = [] }: { entity: Entity; fields: Field[]; query?: string; doctors?: Medico[] }) {
+export function EditEntityForm({ entity }: { entity: 'medicos' | 'consultorios' }) {
+  const { id = '' } = useParams();
+  const { data, isLoading, error, refetch } = useFetch<Medico | Consultorio>(`/${entity}/${encodeURIComponent(id)}`);
+  if (isLoading || error || !data) return <>
+    <Link to={`/${entity}`} className="back-link"><ArrowLeft size={16}/> Volver al listado</Link>
+    {isLoading ? <Loading label="Cargando registro…"/> : <ErrorNotice message={error || 'No se encontró el registro.'} retry={refetch}/>}
+  </>;
+  return <FormBody key={data.id} entity={entity} fields={fields[entity]} record={data}/>;
+}
+
+function FormBody({ entity, fields: formFields, record, query = '', doctors = [] }: { entity: Entity; fields: Field[]; record?: Medico | Consultorio; query?: string; doctors?: Medico[] }) {
   const config = entities[entity]; const Icon = config.icon; const navigate = useNavigate(); const formRef = useRef<HTMLFormElement>(null); const submitting = useRef(false);
-  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(formFields.map(f => [f.key, f.fixed?.value ?? '']))); const [errors, setErrors] = useState<Record<string, string>>({}); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
-  const [agenda, setAgenda] = useState<HorarioMedico[]>([]);
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(formFields.map(field => {
+    const [key, child] = field.key.split('.');
+    const value = child ? (record as Medico | undefined)?.telefono?.[child as keyof Medico['telefono']] :
+      record?.[key as keyof (Medico | Consultorio)];
+    return [field.key, typeof value === 'string' ? value : field.fixed?.value ?? ''];
+  }))); const [errors, setErrors] = useState<Record<string, string>>({}); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
+  const [agenda, setAgenda] = useState<HorarioMedico[]>(() => record && 'agenda' in record ? record.agenda ?? [] : []);
   const doctor = doctors.find(item => item.id === values.medico);
   function focusError(next: Record<string, string>) { requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>(`[name="${Object.keys(next)[0]}"]`)?.focus()); }
   async function submit(event: FormEvent) {
@@ -117,18 +132,25 @@ function FormBody({ entity, fields: formFields, query = '', doctors = [] }: { en
     if (entity === 'pacientes') {
       payload.obraSocial = { nombre: values['obraSocial.nombre'], numeroAfiliado: '' };
     }
-    if (entity === 'medicos') payload.agenda = agenda;
+    if (entity === 'medicos' && (!record || agenda.length > 0 || ('agenda' in record && record.agenda))) payload.agenda = agenda;
     if (entity === 'turnos') {
       delete payload.consultorio;
       payload.fechaTurno = appointmentDate(values.dia, values.fechaTurno);
     } const parsed = schemas[entity].safeParse(payload);
     if (!parsed.success) { const next: Record<string, string> = {}; for (const issue of parsed.error.issues) next[issue.path.join('.')] ??= issue.message; setErrors(next); focusError(next); return; }
     setErrors({}); submitting.current = true; setBusy(true);
-    try { const response = await api.post<ApiResponse<unknown>>(`/${entity}${query}`, parsed.data); if (!response.data.ok) throw new Error(response.data.mensaje); toast.success(`${config.singular[0].toUpperCase() + config.singular.slice(1)} creado correctamente.`); navigate(`/${entity}`); }
+    try {
+      const response = record
+        ? await api.patch<ApiResponse<unknown>>(`/${entity}/${encodeURIComponent(record.id)}`, parsed.data)
+        : await api.post<ApiResponse<unknown>>(`/${entity}${query}`, parsed.data);
+      if (!response.data.ok) throw new Error(response.data.mensaje);
+      toast.success(record ? 'Cambios guardados.' : `${config.singular[0].toUpperCase() + config.singular.slice(1)} creado correctamente.`);
+      navigate(`/${entity}`);
+    }
     catch (error) { const next = serverErrors(error); setErrors(next); setError(errorMessage(error)); toast.error(errorMessage(error)); if (Object.keys(next).length) focusError(next); }
     finally { submitting.current = false; setBusy(false); }
   }
-  return <>{entity !== 'turnos' && <Link to={`/${entity}`} className="back-link"><ArrowLeft size={16}/> Volver a {config.title.toLowerCase()}</Link>}<div className="page-heading"><div><span className="eyebrow">NUEVO REGISTRO</span><h1>Nuevo {config.singular}</h1><p>Completá los datos para incorporarlo al sistema.</p></div></div><div className="form-layout"><section className="form-card"><div className="form-card-heading"><span className={`record-icon ${config.color}`}><Icon size={21}/></span><h2>Datos del {config.singular}</h2></div>{error && <ErrorNotice message={error}/>}<Form noValidate ref={formRef} onSubmit={submit}><div className="form-fields">{formFields.map(field => { const id = 'field-' + field.key.replaceAll('.', '-');
+  return <>{entity !== 'turnos' && <Link to={`/${entity}`} className="back-link"><ArrowLeft size={16}/> Volver a {config.title.toLowerCase()}</Link>}<div className="page-heading"><div><span className="eyebrow">{record ? 'EDITAR REGISTRO' : 'NUEVO REGISTRO'}</span><h1>{record ? 'Editar' : 'Nuevo'} {config.singular}</h1><p>{record ? 'Actualizá los datos y guardá los cambios.' : 'Completá los datos para incorporarlo al sistema.'}</p></div></div><div className="form-layout"><section className="form-card"><div className="form-card-heading"><span className={`record-icon ${config.color}`}><Icon size={21}/></span><h2>Datos del {config.singular}</h2></div>{error && <ErrorNotice message={error}/>}<Form noValidate ref={formRef} onSubmit={submit}><div className="form-fields">{formFields.map(field => { const id = 'field-' + field.key.replaceAll('.', '-');
     const isTime = entity === 'turnos' && field.key === 'fechaTurno';
     const times = isTime ? appointmentTimes(values.dia, values.franja, doctor?.agenda)
       .filter(time => Date.parse(appointmentDate(values.dia, time)) > Date.now()) : [];
@@ -145,5 +167,5 @@ function FormBody({ entity, fields: formFields, query = '', doctors = [] }: { en
       </div>}
     </Form.Group>; })}
     {entity === 'medicos' && <AgendaMedica slots={agenda} onChange={setAgenda} disabled={busy} error={errors.agenda}/>}
-    </div><div className="form-actions"><Link to={`/${entity}`} className={`btn btn-outline-secondary ${busy ? 'disabled' : ''}`} aria-disabled={busy}>Cancelar</Link><Button type="submit" disabled={busy}>{busy ? 'Guardando…' : <><Check size={17}/> Guardar {config.singular}</>}</Button></div></Form></section><aside className="form-help"><span className="record-icon teal"><Info size={21}/></span><h2>Los detalles hacen la diferencia.</h2><p>Los campos con asterisco son obligatorios. Revisá la información antes de guardar.</p>{entity === 'turnos' ? <p>Los turnos duran 30 minutos. El paciente, profesional y consultorio deben estar disponibles durante ese intervalo.</p> : <p>Los datos estarán disponibles en el listado apenas se confirme el guardado.</p>}<div className="help-divider"/><small>Este entorno educativo comienza con datos ficticios para practicar.</small></aside></div></>;
+    </div><div className="form-actions"><Link to={`/${entity}`} className={`btn btn-outline-secondary ${busy ? 'disabled' : ''}`} aria-disabled={busy}>Cancelar</Link><Button type="submit" disabled={busy}>{busy ? 'Guardando…' : <><Check size={17}/> Guardar {record ? 'cambios' : config.singular}</>}</Button></div></Form></section><aside className="form-help"><span className="record-icon teal"><Info size={21}/></span><h2>Los detalles hacen la diferencia.</h2><p>Los campos con asterisco son obligatorios. Revisá la información antes de guardar.</p>{entity === 'turnos' ? <p>Los turnos duran 30 minutos. El paciente, profesional y consultorio deben estar disponibles durante ese intervalo.</p> : <p>Los datos estarán disponibles en el listado apenas se confirme el guardado.</p>}<div className="help-divider"/><small>Este entorno educativo comienza con datos ficticios para practicar.</small></aside></div></>;
 }
