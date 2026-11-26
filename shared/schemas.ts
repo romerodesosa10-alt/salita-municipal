@@ -19,7 +19,11 @@ export type PacienteInput = z.infer<typeof pacienteSchema>;
 export type MedicoInput = z.infer<typeof medicoSchema>;
 export type ConsultorioInput = z.infer<typeof consultorioSchema>;
 export type TurnoInput = z.infer<typeof turnoSchema>;
-export interface Paciente extends PacienteInput { id: string }
+export const estadosPaciente = ['en-espera', 'atendido', 'cancelado'] as const;
+export const estadoPacienteSchema = z.object({ estado: z.enum(estadosPaciente) }).strict();
+export const quitarPacientesSchema = z.object({ ids: z.array(z.string().min(1)).min(1) }).strict();
+export type EstadoPaciente = typeof estadosPaciente[number];
+export interface Paciente extends PacienteInput { id: string; estado?: EstadoPaciente }
 export interface Medico extends MedicoInput { id: string }
 export interface Consultorio extends ConsultorioInput { id: string }
 export interface ITurno { id: string; salitaNombre?: string; paciente: Paciente | null; medico: Medico | null; consultorio: Consultorio | null; fechaTurno: string; estado: 'pendiente' | 'atendido'; especialidad: string; observaciones: string }

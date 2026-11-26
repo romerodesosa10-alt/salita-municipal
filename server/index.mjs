@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from '
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appointmentMinutes, isScheduledAppointment } from '../shared/agenda.ts';
-import { schemas } from '../shared/schemas.ts';
+import { estadoPacienteSchema, quitarPacientesSchema, schemas } from '../shared/schemas.ts';
 import { initializeAccounts, accountService } from './accounts.mjs';
 import express from 'express';
 import { openMongoStore } from './mongo-store.mjs';
@@ -82,11 +82,43 @@ async function handleApi(req, res) {
       (patientCanChooseSite && requestedSite) || actor.salitaId;
     if (!salitaId || !db.salitas.some(s => s.id === salitaId)) return respond(res, 400, 'Seleccioná una salita válida.');
     const scoped = db[entity].filter(row => {
+      if (entity === 'pacientes' && row.archivado) return false;
       if (actor.rol === 'cliente' && entity === 'turnos') return row.paciente === actor.pacienteId;
       if (actor.rol === 'cliente' && entity === 'pacientes') return row.id === actor.pacienteId;
       return row.salitaId === salitaId;
     });
     if (actor.rol === 'cliente' && req.method !== 'GET' && !(entity === 'turnos' && req.method === 'POST' && !id)) return respond(res, 403, 'No tenés permisos para esta operación.');
+    if (entity === 'pacientes' && !action && ((req.method === 'PATCH' && id) || (req.method === 'DELETE' && !id))) {
+      if (actor.rol !== 'admin') return respond(res, 403, 'Solo la administración de la salita puede modificar estas fichas.');
+      const body = await readBody(req);
+
+      if (req.method === 'PATCH') {
+        const patient = scoped.find(row => row.id === id);
+        if (!patient) return respond(res, 404, 'No se encontró el paciente.');
+        const parsed = estadoPacienteSchema.safeParse(body);
+        if (!parsed.success) return respond(res, 400, 'Seleccioná un estado válido.');
+        const previous = patient.estado;
+        patient.estado = parsed.data.estado;
+        try { await save(); } catch (error) {
+          if (previous === undefined) delete patient.estado;
+          else patient.estado = previous;
+          throw error;
+        }
+        return respond(res, 200, 'Estado actualizado.', { estado: patient.estado });
+      }
+
+      const parsed = quitarPacientesSchema.safeParse(body);
+      if (!parsed.success) return respond(res, 400, 'Seleccioná al menos un paciente.');
+      const ids = new Set(parsed.data.ids);
+      const selected = scoped.filter(row => ids.has(row.id));
+      if (selected.length !== ids.size) return respond(res, 409, 'La selección cambió. Actualizá la lista y volvé a intentarlo.');
+      for (const patient of selected) patient.archivado = true;
+      try { await save(); } catch (error) {
+        for (const patient of selected) delete patient.archivado;
+        throw error;
+      }
+      return respond(res, 200, 'Pacientes quitados del listado.', { cantidad: selected.length });
+    }
     if (req.method === 'GET' && !action) {
       const selected = id ? scoped.filter(x => x.id === id) : url.searchParams.has('id') ? scoped.filter(x => x.id === url.searchParams.get('id')) : scoped;
       if (id && !selected.length) return respond(res, 404, 'No se encontró el registro.');
@@ -104,7 +136,7 @@ async function handleApi(req, res) {
         if (actor.rol === 'cliente' && data.paciente !== actor.pacienteId) return respond(res, 403, 'Solo podés solicitar turnos para tu propia cuenta.');
         const errors = {};
         const patient = db.pacientes.find(x => x.id === data.paciente);
-        if (!patient || (actor.rol !== 'cliente' && patient.salitaId !== salitaId)) errors.paciente = 'El paciente seleccionado no existe.';
+        if (!patient || patient.archivado || (actor.rol !== 'cliente' && patient.salitaId !== salitaId)) errors.paciente = 'El paciente seleccionado no existe.';
         if (!db.medicos.some(x => x.id === data.medico && x.salitaId === salitaId)) errors.medico = 'El médico seleccionado no atiende en esta salita.';
         const rooms = db.consultorios.filter(x => x.salitaId === salitaId);
         if (data.consultorio && !rooms.some(x => x.id === data.consultorio)) errors.consultorio = 'El consultorio seleccionado no existe en esta salita.';

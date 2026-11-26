@@ -134,4 +134,32 @@ describe('API: autenticación, validaciones y persistencia', () => {
     await login();
   });
   it('cierra la sesión e invalida el token en el backend', async () => { expect((await request('/auth/logout', 'POST')).status).toBe(200); expect((await request('/pacientes')).status).toBe(401); });
+  it('actualiza el estado y quita fichas en lote conservando los turnos', async () => {
+    await login();
+    const record = {
+      nombre: 'Paciente', apellido: 'Archivo', dni: '77778123', email: 'archivo@example.test',
+      telefono: { codigoArea: '11', numero: '55555555' },
+      direccion: { calle: 'Prueba', numero: '1', barrio: 'Centro' },
+      obraSocial: { nombre: 'Particular', numeroAfiliado: '' },
+    };
+    const created = await request('/pacientes', 'POST', record);
+    expect(created.status).toBe(201);
+    const id = (await created.json()).data.id;
+
+    expect((await request('/pacientes/' + id, 'PATCH', { estado: 'atendido' })).status).toBe(200);
+    const updated = await request('/pacientes/' + id);
+    expect((await updated.json()).data.estado).toBe('atendido');
+    expect((await request('/pacientes/' + id, 'PATCH', { estado: 'inválido' })).status).toBe(400);
+
+    expect((await request('/pacientes', 'DELETE', { ids: [id, 'inexistente'] })).status).toBe(409);
+    expect((await request('/pacientes/' + id)).status).toBe(200);
+    expect((await request('/pacientes', 'DELETE', { ids: [id, 'paciente-demo'] })).status).toBe(200);
+    expect((await request('/pacientes/' + id)).status).toBe(404);
+    expect((await request('/pacientes/paciente-demo')).status).toBe(404);
+    const historical = await request('/turnos/turno-demo');
+    expect((await historical.json()).data.paciente.id).toBe('paciente-demo');
+
+    await stop(); await start(); await login();
+    expect((await request('/pacientes/' + id)).status).toBe(404);
+  });
 });
