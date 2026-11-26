@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button, Form } from 'react-bootstrap';
 import { ArrowLeft, Check, Info } from 'lucide-react';
 import { toast } from 'sonner';
-import { schemas, obrasSociales, type Entity, type Paciente, type Medico, type Consultorio, type ApiResponse, type Salita } from '../../shared/schemas.ts';
+import { schemas, opcionesCobertura, type Entity, type Paciente, type Medico, type Consultorio, type ApiResponse, type Salita } from '../../shared/schemas.ts';
 import { appointmentDate, appointmentTimes, shifts } from '../../shared/agenda.ts';
 import { entities } from '../lib/entities';
 import { api, errorMessage, serverErrors } from '../lib/api';
@@ -15,7 +15,7 @@ type Field = { key: string; label: string; type?: string; placeholder?: string; 
 const personal: Field[] = [{ key: 'nombre', label: 'Nombre' }, { key: 'apellido', label: 'Apellido' }];
 const phone: Field[] = [{ key: 'telefono.codigoArea', label: 'Código de área', placeholder: '3492' }, { key: 'telefono.numero', label: 'Teléfono', placeholder: '5550100' }];
 const fields: Record<Exclude<Entity, 'turnos'>, Field[]> = {
-  pacientes: [...personal, { key: 'dni', label: 'DNI', placeholder: 'Sin puntos ni espacios' }, { key: 'email', label: 'Email', type: 'email' }, ...phone, { key: 'direccion.calle', label: 'Calle' }, { key: 'direccion.numero', label: 'Altura' }, { key: 'direccion.barrio', label: 'Barrio' }, { key: 'obraSocial.nombre', label: 'Obra social', options: obrasSociales.map(nombre => ({ value: nombre, label: nombre })) }, { key: 'obraSocial.numeroAfiliado', label: 'Número de afiliado', optional: true }],
+  pacientes: [...personal, { key: 'dni', label: 'DNI', placeholder: 'Sin puntos ni espacios' }, { key: 'email', label: 'Email', type: 'email' }, ...phone, { key: 'direccion.calle', label: 'Calle' }, { key: 'direccion.numero', label: 'Altura' }, { key: 'direccion.barrio', label: 'Barrio' }, { key: 'obraSocial.nombre', label: '¿Tiene obra social?', options: opcionesCobertura.map(nombre => ({ value: nombre, label: nombre })) }],
   medicos: [...personal, { key: 'matricula', label: 'Matrícula', placeholder: 'Ej.: MP-12345' }, { key: 'especialidad', label: 'Especialidad', placeholder: 'Ej.: Clínica médica' }, { key: 'email', label: 'Email', type: 'email' }, ...phone],
   consultorios: [{ key: 'nombre', label: 'Nombre', placeholder: 'Ej.: Consultorio general' }, { key: 'numero', label: 'Número', placeholder: 'Ej.: 1' }, { key: 'ubicacion', label: 'Ubicación', placeholder: 'Ej.: Planta baja, sector A', wide: true }, { key: 'descripcion', label: 'Descripción', type: 'textarea', optional: true, wide: true }],
 };
@@ -108,8 +108,8 @@ function FormBody({ entity, fields: formFields, query = '' }: { entity: Entity; 
   async function submit(event: FormEvent) {
     event.preventDefault(); if (submitting.current) return; setError('');
     const payload = nest(values);
-    if (entity === 'pacientes' && values['obraSocial.nombre'] === 'Particular') {
-      payload.obraSocial = { nombre: 'Particular', numeroAfiliado: '' };
+    if (entity === 'pacientes') {
+      payload.obraSocial = { nombre: values['obraSocial.nombre'], numeroAfiliado: '' };
     }
     if (entity === 'turnos') {
       delete payload.consultorio;
@@ -121,7 +121,7 @@ function FormBody({ entity, fields: formFields, query = '' }: { entity: Entity; 
     catch (error) { const next = serverErrors(error); setErrors(next); setError(errorMessage(error)); toast.error(errorMessage(error)); if (Object.keys(next).length) focusError(next); }
     finally { submitting.current = false; setBusy(false); }
   }
-  return <><Link to={`/${entity}`} className="back-link"><ArrowLeft size={16}/> Volver a {config.title.toLowerCase()}</Link><div className="page-heading"><div><span className="eyebrow">NUEVO REGISTRO</span><h1>Nuevo {config.singular}</h1><p>Completá los datos para incorporarlo al sistema.</p></div></div><div className="form-layout"><section className="form-card"><div className="form-card-heading"><span className={`record-icon ${config.color}`}><Icon size={21}/></span><h2>Datos del {config.singular}</h2></div>{error && <ErrorNotice message={error}/>}<Form noValidate ref={formRef} onSubmit={submit}><div className="form-fields">{formFields.filter(field => field.key !== 'obraSocial.numeroAfiliado' || values['obraSocial.nombre'] !== 'Particular').map(field => { const id = 'field-' + field.key.replaceAll('.', '-');
+  return <><Link to={`/${entity}`} className="back-link"><ArrowLeft size={16}/> Volver a {config.title.toLowerCase()}</Link><div className="page-heading"><div><span className="eyebrow">NUEVO REGISTRO</span><h1>Nuevo {config.singular}</h1><p>Completá los datos para incorporarlo al sistema.</p></div></div><div className="form-layout"><section className="form-card"><div className="form-card-heading"><span className={`record-icon ${config.color}`}><Icon size={21}/></span><h2>Datos del {config.singular}</h2></div>{error && <ErrorNotice message={error}/>}<Form noValidate ref={formRef} onSubmit={submit}><div className="form-fields">{formFields.map(field => { const id = 'field-' + field.key.replaceAll('.', '-');
     const isTime = entity === 'turnos' && field.key === 'fechaTurno';
     const times = isTime ? appointmentTimes(values.dia, values.franja)
       .filter(time => Date.parse(appointmentDate(values.dia, time)) > Date.now()) : [];

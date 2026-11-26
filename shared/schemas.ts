@@ -4,7 +4,12 @@ const text = (label: string) => z.string().trim().min(2, `${label}: ingresá al 
 const email = z.string().trim().email('Ingresá un email válido.').max(150);
 const phone = z.object({ codigoArea: z.string().trim().regex(/^\d{2,5}$/, 'Código de área: entre 2 y 5 números.'), numero: z.string().trim().regex(/^\d{6,10}$/, 'Teléfono: entre 6 y 10 números.') });
 export const loginSchema = z.object({ usuario: z.string().trim().min(1, 'Ingresá tu usuario o correo.'), password: z.string().min(1, 'Ingresá tu contraseña.') });
-export const obrasSociales = ['Particular', 'IOMA', 'PAMI', 'OSDE', 'OSECAC', 'UPCN', 'OSPE', 'Unión Personal', 'Otra obra social'] as const;
+export const opcionesCobertura = ['Sí', 'No'] as const;
+export function mostrarCobertura(nombre: string) {
+  const valor = nombre.trim().toLowerCase();
+  if (!valor || valor === 'sin informar') return 'Sin informar';
+  return ['no', 'particular', 'sin obra social', 'ninguna'].includes(valor) ? 'No' : 'Sí';
+}
 export const pacienteSchema = z.object({
   nombre: text('Nombre'), apellido: text('Apellido'), dni: z.string().trim().regex(/^\d{7,8}$/, 'El DNI debe tener 7 u 8 números.'), email, telefono: phone,
   direccion: z.object({ calle: text('Calle'), numero: z.string().trim().regex(/^\d{1,6}$/, 'Ingresá una altura válida.'), barrio: text('Barrio') }),
