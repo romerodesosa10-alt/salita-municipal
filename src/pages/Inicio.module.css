@@ -42,7 +42,7 @@
 
     h1 {
         font-family: Georgia, serif;
-        font-size: clamp(2.75rem, 6vw, 5.25rem);
+        font-size: clamp(2.75rem, calc(6vw * var(--text-scale)), 5.25rem);
         line-height: .99;
         letter-spacing: -.045em;
         margin-bottom: 24px;
