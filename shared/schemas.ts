@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { validScheduleRange } from './agenda.ts';
 
 const text = (label: string) => z.string().trim().min(2, `${label}: ingresá al menos 2 caracteres.`).max(120, `${label}: máximo 120 caracteres.`);
 const email = z.string().trim().email('Ingresá un email válido.').max(150);
@@ -15,7 +16,19 @@ export const pacienteSchema = z.object({
   direccion: z.object({ calle: text('Calle'), numero: z.string().trim().regex(/^\d{1,6}$/, 'Ingresá una altura válida.'), barrio: text('Barrio') }),
   obraSocial: z.object({ nombre: text('Obra social'), numeroAfiliado: z.string().trim().max(50) }),
 });
-export const medicoSchema = z.object({ nombre: text('Nombre'), apellido: text('Apellido'), matricula: z.string().trim().min(3, 'La matrícula debe tener al menos 3 caracteres.').max(30), especialidad: text('Especialidad'), email, telefono: phone });
+export const agendaMedicaSchema = z.array(z.object({
+  dia: z.number().int().min(1).max(5),
+  desde: z.string(),
+  hasta: z.string(),
+}).strict()).min(1, 'Agregá al menos un día y horario de atención.').max(10).refine(
+  slots => slots.every(slot => validScheduleRange(slot.desde, slot.hasta)),
+  'Cada horario debe quedar dentro del turno mañana o tarde, en intervalos de 30 minutos.',
+).refine(
+  slots => slots.every((slot, index) => !slots.slice(index + 1).some(other =>
+    slot.dia === other.dia && slot.desde < other.hasta && other.desde < slot.hasta)),
+  'Los horarios del mismo día no pueden superponerse.',
+);
+export const medicoSchema = z.object({ nombre: text('Nombre'), apellido: text('Apellido'), matricula: z.string().trim().min(3, 'La matrícula debe tener al menos 3 caracteres.').max(30), especialidad: text('Especialidad'), email, telefono: phone, agenda: agendaMedicaSchema.optional() });
 export const consultorioSchema = z.object({ nombre: text('Nombre del consultorio'), numero: z.string().trim().regex(/^\d{1,4}$/, 'Ingresá un número de consultorio válido.'), ubicacion: text('Ubicación'), descripcion: z.string().trim().max(300, 'Máximo 300 caracteres.') });
 export const turnoSchema = z.object({ paciente: z.string().min(1, 'Seleccioná un paciente.'), medico: z.string().min(1, 'Seleccioná un médico.'), consultorio: z.string().min(1).optional(), fechaTurno: z.string().refine(s => Number.isFinite(Date.parse(s)), 'Ingresá una fecha y hora válida.').refine(s => Date.parse(s) > Date.now(), 'El turno debe ser a futuro.'), observaciones: z.string().trim().max(500, 'Máximo 500 caracteres.') });
 export const schemas = { pacientes: pacienteSchema, medicos: medicoSchema, consultorios: consultorioSchema, turnos: turnoSchema };

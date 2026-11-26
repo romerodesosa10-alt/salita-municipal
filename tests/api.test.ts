@@ -134,6 +134,26 @@ describe('API: autenticación, validaciones y persistencia', () => {
     await login();
   });
   it('cierra la sesión e invalida el token en el backend', async () => { expect((await request('/auth/logout', 'POST')).status).toBe(200); expect((await request('/pacientes')).status).toBe(401); });
+  it('aplica la agenda semanal del médico al reservar un turno', async () => {
+    await login();
+    const medico = {
+      nombre: 'Médico', apellido: 'Agenda', matricula: 'MP-AGENDA', especialidad: 'Clínica médica',
+      email: 'agenda@example.test', telefono: { codigoArea: '11', numero: '55555555' },
+    };
+    const agenda = [{ dia: 2, desde: '09:00', hasta: '10:00' }];
+    expect((await request('/medicos', 'POST', { ...medico, agenda: [{ ...agenda[0], hasta: '15:00' }] })).status).toBe(400);
+    const created = await request('/medicos', 'POST', { ...medico, agenda });
+    expect(created.status).toBe(201);
+    const doctor = (await created.json()).data;
+    expect(doctor.agenda).toEqual(agenda);
+    const date = new Date();
+    date.setUTCDate(date.getUTCDate() + 7);
+    while (date.getUTCDay() !== 2) date.setUTCDate(date.getUTCDate() + 1);
+    const day = date.toISOString().slice(0, 10);
+    const data = { medico: doctor.id, paciente: 'paciente-demo', observaciones: '' };
+    expect((await request('/turnos', 'POST', { ...data, fechaTurno: day + 'T10:00:00-03:00' })).status).toBe(400);
+    expect((await request('/turnos', 'POST', { ...data, fechaTurno: day + 'T09:30:00-03:00' })).status).toBe(201);
+  });
   it('actualiza el estado y quita fichas en lote conservando los turnos', async () => {
     await login();
     const record = {

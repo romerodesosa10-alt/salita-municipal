@@ -123,7 +123,7 @@ async function handleApi(req, res) {
       const selected = id ? scoped.filter(x => x.id === id) : url.searchParams.has('id') ? scoped.filter(x => x.id === url.searchParams.get('id')) : scoped;
       if (id && !selected.length) return respond(res, 404, 'No se encontró el registro.');
       let data = entity === 'turnos' ? selected.map(populate) : selected;
-      if (actor.rol === 'cliente' && entity === 'medicos') data = selected.map(({ id, nombre, apellido, especialidad }) => ({ id, nombre, apellido, especialidad }));
+      if (actor.rol === 'cliente' && entity === 'medicos') data = selected.map(({ id, nombre, apellido, especialidad, agenda }) => ({ id, nombre, apellido, especialidad, agenda }));
       return respond(res, 200, 'Consulta realizada.', id ? data[0] : data);
     }
     if (req.method === 'POST' && !id) {
@@ -137,10 +137,12 @@ async function handleApi(req, res) {
         const errors = {};
         const patient = db.pacientes.find(x => x.id === data.paciente);
         if (!patient || patient.archivado || (actor.rol !== 'cliente' && patient.salitaId !== salitaId)) errors.paciente = 'El paciente seleccionado no existe.';
-        if (!db.medicos.some(x => x.id === data.medico && x.salitaId === salitaId)) errors.medico = 'El médico seleccionado no atiende en esta salita.';
+        const doctor = db.medicos.find(x => x.id === data.medico && x.salitaId === salitaId);
+        if (!doctor) errors.medico = 'El médico seleccionado no atiende en esta salita.';
         const rooms = db.consultorios.filter(x => x.salitaId === salitaId);
         if (data.consultorio && !rooms.some(x => x.id === data.consultorio)) errors.consultorio = 'El consultorio seleccionado no existe en esta salita.';
-        if (!data.consultorio && !isScheduledAppointment(data.fechaTurno)) errors.fechaTurno = 'Elegí un horario de TM o TT de lunes a viernes.';
+        if (doctor?.agenda && !isScheduledAppointment(data.fechaTurno, doctor.agenda)) errors.fechaTurno = 'El médico no atiende ese día u horario.';
+        else if (!data.consultorio && !isScheduledAppointment(data.fechaTurno)) errors.fechaTurno = 'Elegí un horario de TM o TT de lunes a viernes.';
         if (Object.keys(errors).length) return respond(res, 400, 'Revisá las selecciones.', null, errors);
 
         const startTime = Date.parse(data.fechaTurno);
