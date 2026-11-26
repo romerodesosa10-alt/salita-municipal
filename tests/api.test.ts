@@ -66,5 +66,48 @@ describe('API: autenticación, validaciones y persistencia', () => {
     const disk = readFileSync(dataFile, 'utf8'); expect(disk).not.toContain(data.password); expect(disk).not.toContain(newAdmin.password); expect(disk).toContain('salt');
     await stop(); await start(); const restored = await signIn(data.usuario, data.password); expect((await (await as(restored, '/turnos')).json()).data).toHaveLength(1); await login();
   });
+  it('edita, bloquea, desbloquea y elimina cuentas de administración', async () => {
+    const signIn = async (usuario: string, password: string) => {
+      const response = await request('/auth/login', 'POST', { usuario, password }, false);
+      return { status: response.status, token: (await response.json()).data?.token };
+    };
+    const superSession = await signIn('superadmin', 'SuperSalita2026!');
+    expect(superSession.status).toBe(200);
+    token = superSession.token;
+    const response = await request('/superadmin/administradores', 'POST', {
+      nombre: 'Administración de prueba', usuario: 'admin-gestion', email: 'gestion@example.test',
+      password: 'GestionPrueba2026!', salitaId: 'salita-principal',
+    });
+    expect(response.status).toBe(201);
+    const admin = (await response.json()).data;
+    const path = '/superadmin/administradores/' + admin.id;
+    const adminSession = await signIn('admin-gestion', 'GestionPrueba2026!');
+    expect(adminSession.status).toBe(200);
+
+    token = adminSession.token;
+    expect((await request(path, 'PATCH', { bloqueado: true })).status).toBe(403);
+    token = superSession.token;
+
+    const edited = await request(path, 'PATCH', {
+      nombre: 'Administración actualizada', usuario: 'admin-editado',
+      email: 'editado@example.test', salitaId: 'salita-principal',
+    });
+    expect(edited.status).toBe(200);
+    expect((await edited.json()).data.usuario).toBe('admin-editado');
+    expect((await request(path, 'PATCH', { bloqueado: true })).status).toBe(200);
+    expect((await signIn('admin-editado', 'GestionPrueba2026!')).status).toBe(403);
+    token = adminSession.token;
+    expect((await request('/auth/me')).status).toBe(401);
+
+    token = superSession.token;
+    expect((await request(path, 'PATCH', { bloqueado: false })).status).toBe(200);
+    const restored = await signIn('admin-editado', 'GestionPrueba2026!');
+    expect(restored.status).toBe(200);
+    expect((await request(path, 'DELETE')).status).toBe(200);
+    expect((await signIn('admin-editado', 'GestionPrueba2026!')).status).toBe(401);
+    token = restored.token;
+    expect((await request('/auth/me')).status).toBe(401);
+    await login();
+  });
   it('cierra la sesión e invalida el token en el backend', async () => { expect((await request('/auth/logout', 'POST')).status).toBe(200); expect((await request('/pacientes')).status).toBe(401); });
 });

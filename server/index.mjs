@@ -61,7 +61,7 @@ function populate(turno) { return { ...turno, salitaNombre: db.salitas.find(s =>
 async function handleApi(req, res) {
   const origin = req.headers.origin;
   if (origin && (origin === frontendOrigin || (!frontendOrigin && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)))) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   try {
