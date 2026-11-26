@@ -171,7 +171,7 @@ body{margin:0;font-family:Inter,"Segoe UI",sans-serif;color:var(--ink);backgroun
 }
 
 .administrators-table td { color: #28534b; }
-.administrators-table td:first-child { font-weight: 750; }
+.administrators-table td:nth-child(2) { font-weight: 750; }
 .administrators-table tbody tr:nth-child(even) { background: #eef8f5; }
 .administrators-table tbody tr:hover { background: #e4f5fa; }
 .administrators-table .btn-outline-secondary {

@@ -1,3 +1,4 @@
+import useRecordRemoval from './useRecordRemoval';
 import { useState, type FormEvent } from 'react';
 import { Badge, Button, Form, Modal } from 'react-bootstrap';
 import { toast } from 'sonner';
@@ -5,7 +6,7 @@ import { editarAdminSchema, restablecerAdminSchema, type Administrador, type Api
 import { api, errorMessage } from '../lib/api';
 import { ErrorNotice } from './Feedback';
 
-type Action = 'editar' | 'estado' | 'eliminar' | 'password';
+type Action = 'editar' | 'estado' | 'password';
 type Selection = { action: Action; user: Administrador };
 
 export default function Administradores({ users, salitas, onChange }: {
@@ -16,6 +17,11 @@ export default function Administradores({ users, salitas, onChange }: {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const removal = useRecordRemoval({
+    rows: users, path: '/superadmin/administradores', onChange,
+    note: 'Las cuentas seleccionadas perderán el acceso y se cerrarán sus sesiones. Los datos de las salitas se conservan.',
+  });
 
   function open(action: Action, user: Administrador) {
     setError('');
@@ -48,9 +54,7 @@ export default function Administradores({ users, salitas, onChange }: {
 
     setBusy(true);
     try {
-      const response = action === 'eliminar'
-        ? await api.delete<ApiResponse<unknown>>(path)
-        : await api.patch<ApiResponse<unknown>>(path, payload);
+      const response = await api.patch<ApiResponse<unknown>>(path, payload);
       toast.success(response.data.mensaje);
       setSelection(null);
       onChange();
@@ -64,27 +68,27 @@ export default function Administradores({ users, salitas, onChange }: {
   const user = selection?.user;
   const title = selection?.action === 'editar' ? 'Editar administrador'
     : selection?.action === 'password' ? 'Restablecer contraseña'
-    : selection?.action === 'eliminar' ? 'Eliminar administrador'
     : user?.bloqueado ? 'Desbloquear administrador' : 'Bloquear administrador';
 
   return <>
     {users.length === 0 ? <p className="muted">Todavía no hay administradores registrados.</p> :
-      <div className="table-responsive">
+      <>{removal.toolbar}<div className="table-responsive">
         <table className="agenda-table administrators-table">
-          <thead><tr><th>Nombre</th><th>Usuario</th><th>Salita asignada</th><th>Estado</th><th>Acciones</th></tr></thead>
+          <thead><tr><th scope="col">Selección</th><th>Nombre</th><th>Usuario</th><th>Salita asignada</th><th>Estado</th><th>Acciones</th></tr></thead>
           <tbody>{users.map(admin => <tr key={admin.id}>
-            <td>{admin.nombre}</td><td>{admin.usuario}</td><td>{admin.salitaNombre}</td>
+            <td>{removal.checkbox(admin.id, 'Seleccionar a ' + admin.nombre)}</td><td>{admin.nombre}</td><td>{admin.usuario}</td><td>{admin.salitaNombre}</td>
             <td><Badge bg={admin.bloqueado ? 'secondary' : 'success'}>{admin.bloqueado ? 'Bloqueado' : 'Activo'}</Badge></td>
             <td><div className="d-flex flex-wrap gap-2">
               <Button size="sm" variant="outline-secondary" onClick={() => open('editar', admin)}>Editar</Button>
               <Button size="sm" variant={admin.bloqueado ? 'outline-success' : 'outline-warning'} onClick={() => open('estado', admin)}>{admin.bloqueado ? 'Desbloquear' : 'Bloquear'}</Button>
               <Button size="sm" variant="outline-secondary" onClick={() => open('password', admin)}>Restablecer contraseña</Button>
-              <Button size="sm" variant="outline-danger" onClick={() => open('eliminar', admin)}>Eliminar</Button>
+              {removal.button(admin.id)}
             </div></td>
           </tr>)}</tbody>
         </table>
-      </div>}
+      </div></>}
 
+    {removal.dialog}
     {selection && user && <Modal show onHide={() => { if (!busy) setSelection(null); }} aria-labelledby="admin-action-title">
       <Form onSubmit={submit}>
         <Modal.Header closeButton={!busy}>
@@ -111,14 +115,12 @@ export default function Administradores({ users, salitas, onChange }: {
               <Form.Label>Repetí la nueva contraseña</Form.Label>
               <Form.Control name="confirmacion" type="password" autoComplete="new-password" required minLength={10} maxLength={128}/>
             </Form.Group>
-          </fieldset> : <p className="mb-0">{selection.action === 'eliminar'
-            ? `Se eliminará la cuenta de ${user.usuario}. Los datos de la salita se conservan.`
-            : user.bloqueado ? `${user.usuario} podrá volver a iniciar sesión.`
+          </fieldset> : <p className="mb-0">{user.bloqueado ? `${user.usuario} podrá volver a iniciar sesión.`
             : `Se cerrarán las sesiones de ${user.usuario} y su acceso quedará bloqueado hasta que lo desbloquees.`}</p>}
         </Modal.Body>
         <Modal.Footer>
           <Button variant="outline-secondary" disabled={busy} onClick={() => setSelection(null)}>Cancelar</Button>
-          <Button type="submit" variant={selection.action === 'eliminar' ? 'danger' : 'primary'} disabled={busy || (selection.action === 'editar' && !salitas.length)}>
+          <Button type="submit" variant="primary" disabled={busy || (selection.action === 'editar' && !salitas.length)}>
             {busy ? 'Guardando…' : selection.action === 'editar' ? 'Guardar cambios' : title}
           </Button>
         </Modal.Footer>

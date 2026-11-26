@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { adminSchema, cambiarPasswordSchema, editarAdminSchema, estadoAdminSchema, registroSchema, restablecerAdminSchema, salitaSchema } from '../shared/schemas.ts';
+import { adminSchema, cambiarPasswordSchema, editarAdminSchema, eliminarSeleccionSchema, estadoAdminSchema, registroSchema, restablecerAdminSchema, salitaSchema } from '../shared/schemas.ts';
 const derive = promisify(scrypt);
 async function hash(password, salt = randomBytes(16).toString('hex')) { return { salt, hash: (await derive(password, salt, 64)).toString('hex') }; }
 export async function initializeAccounts(db, save, mongo = false) {
@@ -63,7 +63,7 @@ export function accountService(db, save, respond, readBody) {
   async function createUser(data, role, res) {
     const password = await hash(data.password);
     // Revalidar después de la derivación asíncrona impide altas simultáneas duplicadas.
-    if (!db.salitas.some(x => x.id === data.salitaId)) return respond(res, 400, 'La salita seleccionada no existe.');
+    if (!db.salitas.some(x => !x.archivado && x.id === data.salitaId)) return respond(res, 400, 'La salita seleccionada no existe.');
     if (duplicate(data)) return respond(res, 409, 'Ese usuario o email ya está registrado.');
     if (role === 'cliente' && db.pacientes.some(p => p.salitaId === data.salitaId && p.dni === data.dni)) return respond(res, 409, 'No se puede completar el registro con estos datos. Contactá a la administración de tu salita para vincular tu ficha.');
     const record = await transaction(() => {
@@ -77,7 +77,7 @@ export function accountService(db, save, respond, readBody) {
     publicUser,
     authenticate(req) { const token = (req.headers.authorization || '').replace(/^Bearer /, ''); const session = sessions.get(token); if (!session || session.expires < Date.now()) { sessions.delete(token); return null; } return db.usuarios.find(x => x.id === session.userId && !x.bloqueado) || null; },
     async publicRoute(path, req, res) {
-      if (path === '/api/v1/salitas/publicas' && req.method === 'GET') { respond(res, 200, 'Salitas disponibles.', db.salitas); return true; }
+      if (path === '/api/v1/salitas/publicas' && req.method === 'GET') { respond(res, 200, 'Salitas disponibles.', db.salitas.filter(site => !site.archivado)); return true; }
       if (!['/api/v1/auth/login', '/api/v1/auth/registro'].includes(path) || req.method !== 'POST') return false;
       const key = req.socket.remoteAddress || 'local'; const now = Date.now();
       for (const [key, entry] of attempts) if (entry.until < now) attempts.delete(key);
@@ -125,10 +125,36 @@ export function accountService(db, save, respond, readBody) {
       }
       if (!path.startsWith('/api/v1/superadmin')) return false;
       if (actor.rol !== 'superadmin') { respond(res, 403, 'Solo el superadministrador puede acceder a este portal.'); return true; }
-      if (path === '/api/v1/superadmin/salitas' && req.method === 'GET') { respond(res, 200, 'Salitas.', db.salitas.map(s => ({ ...s, administradores: db.usuarios.filter(u => u.salitaId === s.id && u.rol === 'admin').length }))); return true; }
-      if (path === '/api/v1/superadmin/salitas' && req.method === 'POST') { const data = parse(salitaSchema, await readBody(req), res); if (data) { if (db.salitas.some(s => s.nombre.toLowerCase() === data.nombre.toLowerCase())) respond(res, 409, 'Ya existe una salita con ese nombre.'); else { const row = { ...data, id: randomUUID() }; await transaction(() => db.salitas.push(row)); respond(res, 201, 'Salita creada.', row); } } return true; }
+      if (path === '/api/v1/superadmin/salitas' && req.method === 'GET') { respond(res, 200, 'Salitas.', db.salitas.filter(site => !site.archivado).map(s => ({ ...s, administradores: db.usuarios.filter(u => u.salitaId === s.id && u.rol === 'admin').length }))); return true; }
+      if (path === '/api/v1/superadmin/salitas' && req.method === 'POST') { const data = parse(salitaSchema, await readBody(req), res); if (data) { if (db.salitas.some(s => !s.archivado && s.nombre.toLowerCase() === data.nombre.toLowerCase())) respond(res, 409, 'Ya existe una salita con ese nombre.'); else { const row = { ...data, id: randomUUID() }; await transaction(() => db.salitas.push(row)); respond(res, 201, 'Salita creada.', row); } } return true; }
       if (path === '/api/v1/superadmin/usuarios' && req.method === 'GET') { respond(res, 200, 'Administradores.', db.usuarios.filter(u => u.rol === 'admin').map(adminView)); return true; }
       if (path === '/api/v1/superadmin/administradores' && req.method === 'POST') { const data = parse(adminSchema, await readBody(req), res); if (data) await createUser(data, 'admin', res); return true; }
+      if (req.method === 'DELETE' && ['/api/v1/superadmin/administradores', '/api/v1/superadmin/salitas'].includes(path)) {
+        const data = parse(eliminarSeleccionSchema, await readBody(req), res);
+        if (!data) return true;
+        const ids = new Set(data.ids);
+        const deletingSites = path.endsWith('/salitas');
+        const selected = deletingSites ? db.salitas.filter(site => !site.archivado) : db.usuarios.filter(user => user.rol === 'admin');
+        if (selected.filter(row => ids.has(row.id)).length !== ids.size) {
+          respond(res, 409, 'La selección cambió. Actualizá el listado y volvé a intentarlo.');
+          return true;
+        }
+        if (deletingSites) {
+          const inUse = ['usuarios', 'pacientes', 'medicos', 'consultorios', 'turnos'].some(
+            collection => db[collection].some(row => ids.has(row.salitaId))
+          );
+          if (inUse) {
+            respond(res, 409, 'Solo se pueden eliminar salitas sin cuentas ni registros asociados.');
+            return true;
+          }
+          await transaction(() => { for (const site of db.salitas) if (ids.has(site.id)) site.archivado = true; });
+        } else {
+          await transaction(() => { db.usuarios = db.usuarios.filter(user => !ids.has(user.id)); });
+          for (const id of ids) revokeSessions(id);
+        }
+        respond(res, 200, deletingSites ? 'Salitas eliminadas.' : 'Administradores eliminados.');
+        return true;
+      }
       const adminId = path.match(/^\/api\/v1\/superadmin\/administradores\/([\w-]+)$/)?.[1];
       if (adminId && ['PATCH', 'DELETE'].includes(req.method)) {
         const target = db.usuarios.find(user => user.id === adminId && user.rol === 'admin');
@@ -168,7 +194,7 @@ export function accountService(db, save, respond, readBody) {
 
         const data = parse(editarAdminSchema, body, res);
         if (!data) return true;
-        if (!db.salitas.some(site => site.id === data.salitaId)) {
+        if (!db.salitas.some(site => !site.archivado && site.id === data.salitaId)) {
           respond(res, 400, 'La salita seleccionada no existe.', null, { salitaId: 'Elegí una salita registrada.' });
           return true;
         }

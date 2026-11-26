@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from '
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appointmentMinutes, isScheduledAppointment } from '../shared/agenda.ts';
-import { estadoPacienteSchema, estadoTurnoSchema, quitarPacientesSchema, schemas } from '../shared/schemas.ts';
+import { estadoPacienteSchema, estadoTurnoSchema, eliminarSeleccionSchema, schemas } from '../shared/schemas.ts';
 import { initializeAccounts, accountService } from './accounts.mjs';
 import express from 'express';
 import { openMongoStore } from './mongo-store.mjs';
@@ -80,15 +80,15 @@ async function handleApi(req, res) {
        (req.method === 'POST' && entity === 'turnos'));
     const salitaId = actor.rol === 'superadmin' ? requestedSite :
       (patientCanChooseSite && requestedSite) || actor.salitaId;
-    if (!salitaId || !db.salitas.some(s => s.id === salitaId)) return respond(res, 400, 'Seleccioná una salita válida.');
+    if (!salitaId || !db.salitas.some(s => !s.archivado && s.id === salitaId)) return respond(res, 400, 'Seleccioná una salita válida.');
     const scoped = db[entity].filter(row => {
-      if (entity === 'pacientes' && row.archivado) return false;
+      if (row.archivado) return false;
       if (actor.rol === 'cliente' && entity === 'turnos') return row.paciente === actor.pacienteId;
       if (actor.rol === 'cliente' && entity === 'pacientes') return row.id === actor.pacienteId;
       return row.salitaId === salitaId;
     });
     if (actor.rol === 'cliente' && req.method !== 'GET' && !(entity === 'turnos' && req.method === 'POST' && !id)) return respond(res, 403, 'No tenés permisos para esta operación.');
-    if (entity === 'pacientes' && !action && ((req.method === 'PATCH' && id) || (req.method === 'DELETE' && !id))) {
+    if (!action && ((entity === 'pacientes' && req.method === 'PATCH' && id) || (req.method === 'DELETE' && !id))) {
       if (actor.rol !== 'admin') return respond(res, 403, 'Solo la administración de la salita puede modificar estas fichas.');
       const body = await readBody(req);
 
@@ -107,17 +107,17 @@ async function handleApi(req, res) {
         return respond(res, 200, 'Estado actualizado.', { estado: patient.estado });
       }
 
-      const parsed = quitarPacientesSchema.safeParse(body);
-      if (!parsed.success) return respond(res, 400, 'Seleccioná al menos un paciente.');
+      const parsed = eliminarSeleccionSchema.safeParse(body);
+      if (!parsed.success) return respond(res, 400, 'Seleccioná al menos un registro.');
       const ids = new Set(parsed.data.ids);
       const selected = scoped.filter(row => ids.has(row.id));
       if (selected.length !== ids.size) return respond(res, 409, 'La selección cambió. Actualizá la lista y volvé a intentarlo.');
-      for (const patient of selected) patient.archivado = true;
+      for (const record of selected) record.archivado = true;
       try { await save(); } catch (error) {
-        for (const patient of selected) delete patient.archivado;
+        for (const record of selected) delete record.archivado;
         throw error;
       }
-      return respond(res, 200, 'Pacientes quitados del listado.', { cantidad: selected.length });
+      return respond(res, 200, 'Registros eliminados del listado.', { cantidad: selected.length });
     }
     if (req.method === 'GET' && !action) {
       const selected = id ? scoped.filter(x => x.id === id) : url.searchParams.has('id') ? scoped.filter(x => x.id === url.searchParams.get('id')) : scoped;
@@ -137,16 +137,16 @@ async function handleApi(req, res) {
         const errors = {};
         const patient = db.pacientes.find(x => x.id === data.paciente);
         if (!patient || patient.archivado || (actor.rol !== 'cliente' && patient.salitaId !== salitaId)) errors.paciente = 'El paciente seleccionado no existe.';
-        const doctor = db.medicos.find(x => x.id === data.medico && x.salitaId === salitaId);
+        const doctor = db.medicos.find(x => x.id === data.medico && !x.archivado && x.salitaId === salitaId);
         if (!doctor) errors.medico = 'El médico seleccionado no atiende en esta salita.';
-        const rooms = db.consultorios.filter(x => x.salitaId === salitaId);
+        const rooms = db.consultorios.filter(x => !x.archivado && x.salitaId === salitaId);
         if (data.consultorio && !rooms.some(x => x.id === data.consultorio)) errors.consultorio = 'El consultorio seleccionado no existe en esta salita.';
         if (doctor?.agenda && !isScheduledAppointment(data.fechaTurno, doctor.agenda)) errors.fechaTurno = 'El médico no atiende ese día u horario.';
         else if (!data.consultorio && !isScheduledAppointment(data.fechaTurno)) errors.fechaTurno = 'Elegí un horario de TM o TT de lunes a viernes.';
         if (Object.keys(errors).length) return respond(res, 400, 'Revisá las selecciones.', null, errors);
 
         const startTime = Date.parse(data.fechaTurno);
-        const overlapping = db.turnos.filter(x => x.estado === 'pendiente' &&
+        const overlapping = db.turnos.filter(x => !x.archivado && x.estado === 'pendiente' &&
           Math.abs(Date.parse(x.fechaTurno) - startTime) < appointmentMinutes * 60 * 1000);
         const conflict = overlapping.some(x => x.medico === data.medico || x.paciente === data.paciente);
         if (conflict) return respond(res, 409, 'El paciente o el médico ya tiene un turno en ese horario. Elegí otro.');
@@ -166,7 +166,7 @@ async function handleApi(req, res) {
       const { estado } = parsed.data;
       const previous = record.estado;
       if (estado === 'pendiente' && previous !== 'pendiente') {
-        const conflict = db.turnos.some(x => x.id !== record.id && x.estado === 'pendiente' &&
+        const conflict = db.turnos.some(x => x.id !== record.id && !x.archivado && x.estado === 'pendiente' &&
           Math.abs(Date.parse(x.fechaTurno) - Date.parse(record.fechaTurno)) < appointmentMinutes * 60 * 1000 &&
           (x.medico === record.medico || x.paciente === record.paciente || x.consultorio === record.consultorio));
         if (conflict) return respond(res, 409, 'Ese horario ya está ocupado para el paciente, el médico o el consultorio.');
