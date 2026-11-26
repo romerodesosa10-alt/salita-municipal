@@ -1,3 +1,4 @@
+import BackLink from '../components/BackLink';
 import { useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button, Form } from 'react-bootstrap';
@@ -33,11 +34,13 @@ function TurnoForm() {
   const query = user?.rol === 'cliente' ? '?salitaId=' + encodeURIComponent(siteId) : '';
   const sites = useFetch<Salita[]>('/salitas/publicas');
   const resource = useFetch<Paciente[]>('/pacientes');
-  if (sites.isLoading || resource.isLoading) return <Loading label="Cargando salitas y pacientes…"/>;
-  if (sites.error) return <ErrorNotice message={sites.error} retry={sites.refetch}/>;
-  if (resource.error) return <ErrorNotice message={resource.error} retry={resource.refetch}/>;
+  const back = <BackLink to={user?.rol === 'cliente' ? '/mi-portal' : '/turnos'}/>;
+  if (sites.isLoading || resource.isLoading) return <>{back}<Loading label="Cargando salitas y pacientes…"/></>;
+  if (sites.error) return <>{back}<ErrorNotice message={sites.error} retry={sites.refetch}/></>;
+  if (resource.error) return <>{back}<ErrorNotice message={resource.error} retry={resource.refetch}/></>;
 
   return <>
+    {back}
     <div className="form-card mb-3">
       <Form.Label htmlFor="turno-salita">¿En qué salita querés atenderte?</Form.Label>
       <Form.Select id="turno-salita" value={siteId} disabled={user?.rol !== 'cliente'} onChange={event => setSelectedSite(event.target.value)}>
@@ -53,10 +56,10 @@ function TurnoSiteForm({ query, patients }: { query: string; patients: Paciente[
   const rooms = useFetch<Consultorio[]>('/consultorios' + query);
   const resources = [doctors, rooms];
   if (resources.some(r => r.isLoading)) return <Loading label="Cargando pacientes, médicos y consultorios…"/>;
-  if (resources.some(r => r.error)) return <><Link to="/turnos" className="back-link"><ArrowLeft size={16}/> Volver a turnos</Link>{resources.map((r, i) => r.error ? <ErrorNotice key={i} message={r.error} retry={r.refetch}/> : null)}</>;
+  if (resources.some(r => r.error)) return <>{resources.map((r, i) => r.error ? <ErrorNotice key={i} message={r.error} retry={r.refetch}/> : null)}</>;
   const missing = [!patients.length && 'pacientes', !doctors.data?.length && 'medicos', !rooms.data?.length && 'consultorios'].filter(Boolean) as Entity[];
-  if (missing.length && user?.rol === 'cliente') return <div className="form-card"><h1>La agenda todavía no está disponible</h1><p>La sede seleccionada todavía debe registrar sus profesionales y consultorios para recibir turnos.</p><Link to="/mi-portal">Volver a mi portal</Link></div>;
-  if (missing.length) return <div className="form-card"><h1>Prepará tu primer turno</h1><p>Antes de reservar, necesitás registros en estas secciones:</p>{missing.map(key => <Link className="btn btn-outline-primary me-2 mb-2" key={key} to={`/${key}/nuevo`}>Crear {entities[key].singular}</Link>)}<div><Link className="back-link mt-3" to="/turnos">Volver a turnos</Link></div></div>;
+  if (missing.length && user?.rol === 'cliente') return <div className="form-card"><h1>La agenda todavía no está disponible</h1><p>La sede seleccionada todavía debe registrar sus profesionales y consultorios para recibir turnos.</p></div>;
+  if (missing.length) return <div className="form-card"><h1>Prepará tu primer turno</h1><p>Antes de reservar, necesitás registros en estas secciones:</p>{missing.map(key => <Link className="btn btn-outline-primary me-2 mb-2" key={key} to={`/${key}/nuevo`}>Crear {entities[key].singular}</Link>)}</div>;
   const options = (list: (Paciente | Medico)[]) => list.map(x => ({ value: x.id, label: `${x.nombre} ${x.apellido}${'especialidad' in x ? ` · ${x.especialidad}` : ` · DNI ${x.dni}`}` }));
   const patientOptions = options(patients);
   const patient = patientOptions.find(option => option.value === user?.pacienteId);
@@ -125,7 +128,7 @@ function FormBody({ entity, fields: formFields, query = '', doctors = [] }: { en
     catch (error) { const next = serverErrors(error); setErrors(next); setError(errorMessage(error)); toast.error(errorMessage(error)); if (Object.keys(next).length) focusError(next); }
     finally { submitting.current = false; setBusy(false); }
   }
-  return <><Link to={`/${entity}`} className="back-link"><ArrowLeft size={16}/> Volver a {config.title.toLowerCase()}</Link><div className="page-heading"><div><span className="eyebrow">NUEVO REGISTRO</span><h1>Nuevo {config.singular}</h1><p>Completá los datos para incorporarlo al sistema.</p></div></div><div className="form-layout"><section className="form-card"><div className="form-card-heading"><span className={`record-icon ${config.color}`}><Icon size={21}/></span><h2>Datos del {config.singular}</h2></div>{error && <ErrorNotice message={error}/>}<Form noValidate ref={formRef} onSubmit={submit}><div className="form-fields">{formFields.map(field => { const id = 'field-' + field.key.replaceAll('.', '-');
+  return <>{entity !== 'turnos' && <Link to={`/${entity}`} className="back-link"><ArrowLeft size={16}/> Volver a {config.title.toLowerCase()}</Link>}<div className="page-heading"><div><span className="eyebrow">NUEVO REGISTRO</span><h1>Nuevo {config.singular}</h1><p>Completá los datos para incorporarlo al sistema.</p></div></div><div className="form-layout"><section className="form-card"><div className="form-card-heading"><span className={`record-icon ${config.color}`}><Icon size={21}/></span><h2>Datos del {config.singular}</h2></div>{error && <ErrorNotice message={error}/>}<Form noValidate ref={formRef} onSubmit={submit}><div className="form-fields">{formFields.map(field => { const id = 'field-' + field.key.replaceAll('.', '-');
     const isTime = entity === 'turnos' && field.key === 'fechaTurno';
     const times = isTime ? appointmentTimes(values.dia, values.franja, doctor?.agenda)
       .filter(time => Date.parse(appointmentDate(values.dia, time)) > Date.now()) : [];
