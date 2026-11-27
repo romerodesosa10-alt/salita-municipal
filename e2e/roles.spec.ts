@@ -18,6 +18,6 @@ test('registro público crea cliente y solo permite sus propios turnos', async (
     await page.getByRole('button', { name: 'Semana siguiente' }).click();
   }
   await dayButton.click();
-  await page.getByRole('button', { name: '14:00 Disponible', exact: true }).click();await page.getByRole('button',{name:'Guardar turno'}).click();await expect(page).toHaveURL(/\/turnos$/);await expect(page.locator('.turno-card')).toContainText('Consultorio general'); await expect(page.locator('.turno-card')).toContainText('Salita Municipal Central');await expect(page.getByRole('button',{name:'Marcar atendido'})).toHaveCount(0);
+  await page.getByRole('button', { name: '14:00 Disponible', exact: true }).click();await page.getByRole('button',{name:'Guardar turno'}).click();await expect(page).toHaveURL(/\/turnos$/);await expect(page.locator('.turno-card')).toContainText('Consultorio N.º 1'); await expect(page.locator('.turno-card')).toContainText('Salita Municipal Central');await expect(page.getByRole('button',{name:'Marcar atendido'})).toHaveCount(0);
   await page.reload(); await expect(page.locator('.turno-card')).toHaveCount(1); await page.getByRole('navigation').getByRole('link',{name:'Mi portal',exact:true}).click(); await expect(page).toHaveURL(/\/mi-portal$/); await page.screenshot({path:'test-results/portal-cliente.png',fullPage:true});
 });

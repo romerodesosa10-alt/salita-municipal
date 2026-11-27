@@ -246,7 +246,7 @@ function FormBody({ entity, fields: formFields, record, referral, query = '', do
           busy={busy || checkingSlots} error={availabilityError || errors.fechaTurno}/>}
     </fieldset>;
     const options = field.options; const props = { id, name: field.key, value: values[field.key] || '', disabled: busy, required: !field.optional && !field.fixed, isInvalid: !!errors[field.key], 'aria-describedby': errors[field.key] ? `${id}-error` : undefined, onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => { setValues(v => ({ ...v, [field.key]: event.target.value, ...(['medico', 'franja', 'paciente'].includes(field.key) ? { fechaTurno: '' } : {}) })); setErrors(old => { const next = { ...old }; delete next[field.key]; return next; }); } }; return <Form.Group key={field.key} className={field.wide ? 'field-wide' : ''}><Form.Label htmlFor={id}>{field.label}{field.fixed ? null : field.optional ? <span className="optional"> · opcional</span> : <span className="required-mark"> *</span>}</Form.Label>{field.fixed ? <Form.Control {...props} value={field.key === 'consultorio' && doctor?.consultorioAsignado
-      ? doctor.consultorioAsignado.nombre + ' · N.º ' + doctor.consultorioAsignado.numero + ' · ' + doctor.consultorioAsignado.ubicacion
+      ? 'Consultorio N.º ' + doctor.consultorioAsignado.numero + ' · ' + doctor.consultorioAsignado.ubicacion
       : field.fixed.label} readOnly/> : options || field.groups ? <Form.Select {...props}><option value="">Seleccioná una opción</option>{options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       {field.groups?.map(group => <optgroup key={group.label} label={group.label}>
         {group.options.map(option => <option key={option.value || option.label} value={option.value} disabled={!option.value || option.disabled}>{option.label}</option>)}
@@ -274,7 +274,7 @@ function FormBody({ entity, fields: formFields, record, referral, query = '', do
         <Form.Select value={roomChoice} onChange={event => setRoomChoice(event.target.value)}
           disabled={rooms.isLoading || !!rooms.error} isInvalid={!!errors.consultorioId}>
           <option value="">Sin asignar</option>
-          {rooms.data?.map(room => <option key={room.id} value={room.id}>{room.nombre} · N.º {room.numero} · {room.ubicacion}</option>)}
+          {rooms.data?.map(room => <option key={room.id} value={room.id}>Consultorio N.º {room.numero} · {room.ubicacion}</option>)}
           <option value="nuevo">Registrar un consultorio nuevo</option>
         </Form.Select>
         <Form.Control.Feedback type="invalid">{errors.consultorioId}</Form.Control.Feedback>

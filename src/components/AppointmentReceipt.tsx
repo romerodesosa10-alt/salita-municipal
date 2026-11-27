@@ -30,7 +30,7 @@ export default function AppointmentReceipt({ turno }: { turno: ITurno }) {
         ['Fecha y hora', date],
         ['Profesional', turno.medico ? turno.medico.nombre + ' ' + turno.medico.apellido : 'Sin asignar'],
         ['Salita', turno.salitaNombre || 'Sin informar'],
-        ['Consultorio', turno.consultorio?.nombre || 'Sin asignar'],
+        ['Consultorio', turno.consultorio ? 'Consultorio N.º ' + turno.consultorio.numero : 'Sin asignar'],
         ['Estado', estadoTurnoLabels[turno.estado]],
       ];
       fields.forEach(([label, value], index) => {
