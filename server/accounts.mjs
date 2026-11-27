@@ -68,7 +68,7 @@ export function accountService(db, save, respond, readBody) {
     if (role === 'cliente' && db.pacientes.some(p => p.salitaId === data.salitaId && p.dni === data.dni)) return respond(res, 409, 'No se puede completar el registro con estos datos. Contactá a la administración de tu salita para vincular tu ficha.');
     const record = await transaction(() => {
       const pacienteId = role === 'cliente' ? randomUUID() : null;
-      if (pacienteId) db.pacientes.push({ id: pacienteId, salitaId: data.salitaId, nombre: data.nombre, apellido: data.apellido, dni: data.dni, email: data.email, telefono: { codigoArea: '', numero: '' }, direccion: { calle: '', numero: '', barrio: '' }, obraSocial: { nombre: data.cobertura, numeroAfiliado: '' } });
+      if (pacienteId) db.pacientes.push({ id: pacienteId, salitaId: data.salitaId, nombre: data.nombre, apellido: data.apellido, dni: data.dni, email: data.email, celularSms: data.celularSms, telefono: { codigoArea: '', numero: '' }, direccion: { calle: '', numero: '', barrio: '' }, obraSocial: { nombre: data.cobertura, numeroAfiliado: '' } });
       const user = { id: randomUUID(), usuario: data.usuario, nombre: role === 'cliente' ? `${data.nombre} ${data.apellido}` : data.nombre, email: data.email, rol: role, salitaId: data.salitaId, pacienteId, password }; db.usuarios.push(user); return user;
     });
     return respond(res, 201, role === 'cliente' ? 'Tu cuenta fue creada.' : 'Administrador creado.', role === 'cliente' ? issueSession(record) : publicUser(record));

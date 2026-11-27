@@ -7,7 +7,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Button, Form } from 'react-bootstrap';
 import { ArrowLeft, Check, Info } from 'lucide-react';
 import { toast } from 'sonner';
-import { derivacionTurnoSchema, schemas, opcionesCobertura, type Entity, type Paciente, type Medico, type Consultorio, type ApiResponse, type ITurno, type Salita } from '../../shared/schemas.ts';
+import { derivacionTurnoSchema, schemas, opcionesCobertura, type Entity, type Paciente, type Medico, type Consultorio, type ApiResponse, type AppointmentSmsStatus, type ITurno, type Salita } from '../../shared/schemas.ts';
 import { appointmentDate, appointmentWeekStart, localAppointmentDay, shifts, weekdays, type AppointmentAvailability, type HorarioMedico } from '../../shared/agenda.ts';
 import { entities } from '../lib/entities';
 import { api, errorMessage, serverErrors } from '../lib/api';
@@ -201,9 +201,16 @@ function FormBody({ entity, fields: formFields, record, referral, query = '', do
         ? await api.patch<ApiResponse<unknown>>('/turnos/' + encodeURIComponent(referral.original.id) + '/derivar', parsed.data)
         : record
         ? await api.patch<ApiResponse<unknown>>(`/${entity}/${encodeURIComponent(record.id)}`, parsed.data)
-        : await api.post<ApiResponse<unknown>>(`/${entity}${query}`, parsed.data);
+        : await api.post<ApiResponse<{ sms?: AppointmentSmsStatus }>>(`/${entity}${query}`, parsed.data);
       if (!response.data.ok) throw new Error(response.data.mensaje);
       toast.success(referral ? 'Turno derivado con urgencia.' : record ? 'Cambios guardados.' : `${config.singular[0].toUpperCase() + config.singular.slice(1)} creado correctamente.`);
+      if (entity === 'turnos' && response.data.data && typeof response.data.data === 'object' && 'sms' in response.data.data) {
+        const sms = response.data.data.sms;
+        if (sms === 'en-cola') toast.info('Aviso por SMS aceptado para envío.');
+        if (sms === 'sin-telefono') toast.warning('Turno guardado. El paciente no tiene un celular válido para avisos.');
+        if (sms === 'sin-configurar') toast.warning('Turno guardado. El envío de SMS todavía no está configurado.');
+        if (sms === 'fallido') toast.warning('Turno guardado. No se pudo enviar el SMS.');
+      }
       navigate(`/${entity}`);
     }
     catch (error) {

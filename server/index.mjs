@@ -1,3 +1,4 @@
+import { notifyAppointmentSms } from './appointment-sms.mjs';
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
@@ -277,7 +278,10 @@ async function handleApi(req, res) {
       }
       const record = { ...data, ...(derivacion ? { derivacion } : {}), id: randomUUID(), salitaId, ...(entity === 'turnos' ? { fechaTurno: new Date(data.fechaTurno).toISOString(), estado: 'pendiente' } : {}) };
       db[entity].push(record); try { await save(); } catch (error) { db[entity].pop(); throw error; }
-      return respond(res, 201, 'Registro creado correctamente.', entity === 'turnos' ? populate(record) : record);
+      if (entity !== 'turnos') return respond(res, 201, 'Registro creado correctamente.', record);
+      const appointment = populate(record);
+      const sms = actor.rol === 'admin' ? await notifyAppointmentSms(appointment.paciente, appointment) : undefined;
+      return respond(res, 201, 'Turno reservado.', { ...appointment, sms });
     }
     if (entity === 'turnos' && id && ['atender', 'estado'].includes(action) && req.method === 'PATCH') {
       const record = scoped.find(x => x.id === id); if (!record) return respond(res, 404, 'No se encontró el turno.');

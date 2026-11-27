@@ -72,7 +72,8 @@ export const cambiarPasswordSchema = z.object({
 }).strict().refine(data => data.actual !== data.nueva, {
   path: ['nueva'], message: 'Elegí una contraseña distinta de la actual.',
 });
-export const registroSchema = z.object({ nombre: text('Nombre'), apellido: text('Apellido'), dni: z.string().regex(/^\d{7,8}$/, 'El DNI debe tener 7 u 8 números.'), email, usuario: username, password, cobertura: text('Obra social').default('Sin informar'), salitaId: z.string().min(1, 'Seleccioná tu salita.') }).strict();
+export type AppointmentSmsStatus = 'sin-telefono' | 'sin-configurar' | 'en-cola' | 'fallido';
+export const registroSchema = z.object({ celularSms: z.string().trim().regex(/^\+[1-9]\d{7,14}$/, 'Ingresá tu celular con código de país, por ejemplo +5493492550123.').or(z.literal('')).default(''), nombre: text('Nombre'), apellido: text('Apellido'), dni: z.string().regex(/^\d{7,8}$/, 'El DNI debe tener 7 u 8 números.'), email, usuario: username, password, cobertura: text('Obra social').default('Sin informar'), salitaId: z.string().min(1, 'Seleccioná tu salita.') }).strict();
 export const salitaSchema = z.object({ nombre: text('Nombre'), direccion: text('Dirección') }).strict();
 export const adminSchema = z.object({ nombre: text('Nombre'), email, usuario: username, password, salitaId: z.string().min(1, 'Seleccioná una salita.') }).strict();
 export const editarAdminSchema = adminSchema.omit({ password: true });
