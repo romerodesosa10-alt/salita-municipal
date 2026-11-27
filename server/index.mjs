@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { appointmentMinutes, isScheduledAppointment } from '../shared/agenda.ts';
+import { addCalendarDays, appointmentDate, appointmentMinutes, appointmentTimes, isScheduledAppointment } from '../shared/agenda.ts';
 import { cancelarTurnoSchema, derivacionTurnoSchema, estadoPacienteSchema, estadoTurnoSchema, eliminarSeleccionSchema, schemas } from '../shared/schemas.ts';
 import { initializeAccounts, accountService } from './accounts.mjs';
 import express from 'express';
@@ -57,6 +57,17 @@ async function readBody(req) {
   let body = ''; for await (const chunk of req) { body += chunk; if (Buffer.byteLength(body) > 65536) throw Object.assign(new Error('La petición es demasiado grande.'), { status: 413 }); }
   try { return JSON.parse(body || '{}'); } catch { throw Object.assign(new Error('El cuerpo debe ser JSON válido.'), { status: 400 }); }
 }
+function overlappingAppointments(date, excludedId) {
+  const start = Date.parse(date);
+  return db.turnos.filter(turno => turno.id !== excludedId && !turno.archivado && turno.estado === 'pendiente' &&
+    Math.abs(Date.parse(turno.fechaTurno) - start) < appointmentMinutes * 60 * 1000);
+}
+
+function availableRoom(rooms, overlapping, requestedRoom) {
+  return rooms.find(room => (!requestedRoom || room.id === requestedRoom) &&
+    !overlapping.some(turno => turno.consultorio === room.id));
+}
+
 function populate(turno) { return { ...turno, salitaNombre: db.salitas.find(s => s.id === turno.salitaId)?.nombre, paciente: db.pacientes.find(x => x.id === turno.paciente) || null, medico: db.medicos.find(x => x.id === turno.medico) || null, consultorio: db.consultorios.find(x => x.id === turno.consultorio) || null, especialidad: db.medicos.find(x => x.id === turno.medico)?.especialidad || '' }; }
 async function handleApi(req, res) {
   const origin = req.headers.origin;
@@ -75,12 +86,44 @@ async function handleApi(req, res) {
     if (!match) return respond(res, 404, 'La ruta no existe.');
     const [, entity, id, action] = match;
     const requestedSite = url.searchParams.get('salitaId');
-    const patientCanChooseSite = actor.rol === 'cliente' && !id &&
-      ((req.method === 'GET' && ['medicos', 'consultorios'].includes(entity)) ||
+    const availability = entity === 'turnos' && id === 'disponibilidad' && !action && req.method === 'GET';
+    const patientCanChooseSite = actor.rol === 'cliente' && (!id || availability) &&
+      ((req.method === 'GET' && (availability || ['medicos', 'consultorios'].includes(entity))) ||
        (req.method === 'POST' && entity === 'turnos'));
     const salitaId = actor.rol === 'superadmin' ? requestedSite :
       (patientCanChooseSite && requestedSite) || actor.salitaId;
     if (!salitaId || !db.salitas.some(s => !s.archivado && s.id === salitaId)) return respond(res, 400, 'Seleccioná una salita válida.');
+    if (availability) {
+      const doctor = db.medicos.find(row => row.id === url.searchParams.get('medico') && row.salitaId === salitaId && !row.archivado);
+      const day = url.searchParams.get('desde') || '';
+      const shift = url.searchParams.get('franja');
+      const weekTime = Date.parse(day + 'T12:00:00Z');
+      if (!doctor || !/^\d{4}-\d{2}-\d{2}$/.test(day) || day < '2000-01-01' || day > '9998-12-31' ||
+          !Number.isFinite(weekTime) || new Date(weekTime).toISOString().slice(0, 10) !== day ||
+          !['TM', 'TT'].includes(shift)) {
+        return respond(res, 400, 'Seleccioná un profesional, una fecha y un turno válidos.');
+      }
+
+      const original = actor.rol === 'admin' && db.turnos.find(row =>
+        row.id === url.searchParams.get('derivar') && row.salitaId === salitaId && !row.archivado && row.estado === 'pendiente');
+      const patientId = actor.rol === 'cliente' ? actor.pacienteId : original?.paciente ||
+        db.pacientes.find(row => row.id === url.searchParams.get('paciente') && row.salitaId === salitaId && !row.archivado)?.id;
+      const rooms = db.consultorios.filter(row => row.salitaId === salitaId && !row.archivado);
+      const now = Date.now();
+      const days = Array.from({ length: 7 }, (_, index) => {
+        const date = addCalendarDays(day, index);
+        const slots = appointmentTimes(date, shift, doctor.agenda).flatMap(time => {
+          const startsAt = appointmentDate(date, time);
+          if (Date.parse(startsAt) <= now) return [];
+          const overlapping = overlappingAppointments(startsAt, original?.id);
+          const free = !overlapping.some(row => row.medico === doctor.id || row.paciente === patientId) &&
+            Boolean(availableRoom(rooms, overlapping));
+          return [{ time, available: free }];
+        });
+        return { day: date, slots };
+      });
+      return respond(res, 200, 'Disponibilidad consultada.', days);
+    }
     const scoped = db[entity].filter(row => {
       if (row.archivado) return false;
       if (actor.rol === 'cliente' && entity === 'turnos') return row.paciente === actor.pacienteId;
@@ -202,13 +245,10 @@ async function handleApi(req, res) {
         else if (!data.consultorio && !isScheduledAppointment(data.fechaTurno)) errors.fechaTurno = 'Elegí un horario de TM o TT de lunes a viernes.';
         if (Object.keys(errors).length) return respond(res, 400, 'Revisá las selecciones.', null, errors);
 
-        const startTime = Date.parse(data.fechaTurno);
-        const overlapping = db.turnos.filter(x => x.id !== original?.id && !x.archivado && x.estado === 'pendiente' &&
-          Math.abs(Date.parse(x.fechaTurno) - startTime) < appointmentMinutes * 60 * 1000);
+        const overlapping = overlappingAppointments(data.fechaTurno, original?.id);
         const conflict = overlapping.some(x => x.medico === data.medico || x.paciente === data.paciente);
         if (conflict) return respond(res, 409, 'El paciente o el médico ya tiene un turno en ese horario. Elegí otro.');
-        const available = rooms.find(room => (!data.consultorio || room.id === data.consultorio) &&
-          !overlapping.some(x => x.consultorio === room.id));
+        const available = availableRoom(rooms, overlapping, data.consultorio);
         if (!available) return respond(res, 409, 'No hay consultorios libres en esta salita para ese horario.');
         data.consultorio = available.id;
       }

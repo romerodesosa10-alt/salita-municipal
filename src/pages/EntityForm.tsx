@@ -1,17 +1,18 @@
 import { isAxiosError } from 'axios';
 import { BookingCountdown, useBookingCountdown } from '../components/BookingCountdown';
 import BackLink from '../components/BackLink';
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button, Form } from 'react-bootstrap';
 import { ArrowLeft, Check, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { derivacionTurnoSchema, schemas, opcionesCobertura, type Entity, type Paciente, type Medico, type Consultorio, type ApiResponse, type ITurno, type Salita } from '../../shared/schemas.ts';
-import { appointmentDate, appointmentTimes, shifts, weekdays, type HorarioMedico } from '../../shared/agenda.ts';
+import { appointmentDate, appointmentWeekStart, localAppointmentDay, shifts, weekdays, type AppointmentAvailability, type HorarioMedico } from '../../shared/agenda.ts';
 import { entities } from '../lib/entities';
 import { api, errorMessage, serverErrors } from '../lib/api';
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../auth/AuthContext';
+import AvailabilityCalendar from '../components/AvailabilityCalendar';
 import AgendaMedica from '../components/AgendaMedica';
 import { ErrorNotice, Loading } from '../components/Feedback';
 type Option = { value: string; label: string };
@@ -91,9 +92,8 @@ function TurnoSiteForm({ query, patients, referral }: { query: string; patients:
     { key: 'paciente', label: 'Paciente', options: patientOptions, fixed: user?.rol === 'cliente' || referral ? patient : undefined, wide: true },
     { key: 'medico', label: 'Médico', groups: doctorGroups(doctors.data || [], options), wide: true },
     { key: 'consultorio', label: 'Consultorio', fixed: { value: '', label: 'Se asigna al confirmar según disponibilidad en la salita' }, wide: true },
-    { key: 'dia', label: 'Fecha (lunes a viernes)', type: 'date' },
     { key: 'franja', label: 'Turno', options: shifts.map(shift => ({ value: shift.id, label: shift.label })) },
-    { key: 'fechaTurno', label: 'Hora', options: [] },
+    { key: 'fechaTurno', label: 'Fecha y horario', wide: true },
     ...(referral ? [{ key: 'motivoDerivacion', label: 'Motivo de la derivación', type: 'textarea', wide: true }] : []),
     { key: 'observaciones', label: 'Observaciones', type: 'textarea', optional: true, wide: true },
   ]}/>;
@@ -151,6 +151,27 @@ function FormBody({ entity, fields: formFields, record, referral, query = '', do
   }))); const [errors, setErrors] = useState<Record<string, string>>({}); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
   const [agenda, setAgenda] = useState<HorarioMedico[]>(() => record && 'agenda' in record ? record.agenda ?? [] : []);
   const doctor = doctors.find(item => item.id === values.medico);
+  const [week, setWeek] = useState(() => appointmentWeekStart(localAppointmentDay()));
+  const availabilityParams = new URLSearchParams(query);
+  availabilityParams.set('desde', week);
+  availabilityParams.set('medico', values.medico || '');
+  availabilityParams.set('franja', values.franja || '');
+  availabilityParams.set('paciente', values.paciente || '');
+  if (referral?.original) availabilityParams.set('derivar', referral.original.id);
+  const availabilityPath = doctor && values.franja ? '/turnos/disponibilidad?' + availabilityParams : '';
+  const { data: days, error: availabilityError, isLoading: checkingSlots, refetch: refreshSlots } =
+    useFetch<AppointmentAvailability[]>(availabilityPath, true);
+  useEffect(() => {
+    if (!availabilityPath) return;
+    const timer = window.setInterval(refreshSlots, 15000);
+    window.addEventListener('focus', refreshSlots);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refreshSlots); };
+  }, [availabilityPath, refreshSlots]);
+  const selectedSlot = days?.find(day => day.day === values.dia)?.slots.find(slot => slot.time === values.fechaTurno);
+  function chooseDay(day: string) {
+    setValues(prev => ({ ...prev, dia: day, fechaTurno: '' }));
+    setErrors(prev => ({ ...prev, fechaTurno: '' }));
+  }
   function focusError(next: Record<string, string>) { requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>(`[name="${Object.keys(next)[0]}"]`)?.focus()); }
   async function submit(event: FormEvent) {
     event.preventDefault(); if (submitting.current) return; setError('');
@@ -160,6 +181,11 @@ function FormBody({ entity, fields: formFields, record, referral, query = '', do
     }
     if (entity === 'medicos' && (!record || agenda.length > 0 || ('agenda' in record && record.agenda))) payload.agenda = agenda;
     if (entity === 'turnos') {
+      if (!selectedSlot?.available) {
+        setErrors({ fechaTurno: 'Elegí un horario disponible.' });
+        return;
+      }
+      delete payload.dia;
       delete payload.consultorio;
       payload.fechaTurno = appointmentDate(values.dia, values.fechaTurno);
     } const parsed = (referral ? derivacionTurnoSchema : schemas[entity]).safeParse(payload);
@@ -179,15 +205,24 @@ function FormBody({ entity, fields: formFields, record, referral, query = '', do
       if (isAxiosError<ApiResponse<{ bloqueadoHasta?: string }>>(error)) {
         const until = error.response?.data?.data?.bloqueadoHasta;
         if (until) updateBookingBlock(until);
+        if (entity === 'turnos' && error.response?.status === 409) refreshSlots();
       }
       const next = serverErrors(error); setErrors(next); setError(errorMessage(error)); toast.error(errorMessage(error)); if (Object.keys(next).length) focusError(next); }
     finally { submitting.current = false; setBusy(false); }
   }
   return <>{entity !== 'turnos' && <Link to={`/${entity}`} className="back-link"><ArrowLeft size={16}/> Volver a {config.title.toLowerCase()}</Link>}<div className="page-heading"><div><span className="eyebrow">{referral ? 'PRIORIDAD URGENTE' : record ? 'EDITAR REGISTRO' : 'NUEVO REGISTRO'}</span><h1>{referral ? 'Derivar con urgencia' : (record ? 'Editar ' : 'Nuevo ') + config.singular}</h1><p>{referral ? 'Elegí un profesional, un horario y registrá el motivo.' : record ? 'Actualizá los datos y guardá los cambios.' : 'Completá los datos para incorporarlo al sistema.'}</p></div></div><div className="form-layout"><section className="form-card"><div className="form-card-heading"><span className={`record-icon ${config.color}`}><Icon size={21}/></span><h2>Datos del {config.singular}</h2></div>{error && <ErrorNotice message={error}/>}<Form noValidate ref={formRef} onSubmit={submit}><div className="form-fields">{formFields.map(field => { const id = 'field-' + field.key.replaceAll('.', '-');
-    const isTime = entity === 'turnos' && field.key === 'fechaTurno';
-    const times = isTime ? appointmentTimes(values.dia, values.franja, doctor?.agenda)
-      .filter(time => Date.parse(appointmentDate(values.dia, time)) > Date.now()) : [];
-    const options = isTime ? times.map(time => ({ value: time, label: time })) : field.options; const props = { id, name: field.key, value: values[field.key] || '', disabled: busy || (isTime && !times.length), required: !field.optional && !field.fixed, isInvalid: !!errors[field.key], 'aria-describedby': errors[field.key] ? `${id}-error` : undefined, onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => { setValues(v => ({ ...v, [field.key]: event.target.value, ...(['medico', 'dia', 'franja'].includes(field.key) ? { fechaTurno: '' } : {}) })); setErrors(old => { const next = { ...old }; delete next[field.key]; return next; }); } }; return <Form.Group key={field.key} className={field.wide ? 'field-wide' : ''}><Form.Label htmlFor={id}>{field.label}{field.fixed ? null : field.optional ? <span className="optional"> · opcional</span> : <span className="required-mark"> *</span>}</Form.Label>{field.fixed ? <Form.Control {...props} value={field.fixed.label} readOnly/> : options || field.groups ? <Form.Select {...props}><option value="">{isTime && !times.length ? (values.dia && values.franja ? "Sin horarios para esa fecha y turno" : "Elegí fecha y turno") : "Seleccioná una opción"}</option>{options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    if (entity === 'turnos' && field.key === 'fechaTurno') return <fieldset key={field.key} className="field-wide">
+      <legend className="form-label">Fecha y horario</legend>
+      {!availabilityPath ? <p className="muted mb-0">Elegí un médico y un turno para ver los cupos.</p> :
+        <AvailabilityCalendar week={week} setWeek={next => { setWeek(next); chooseDay(''); }}
+          days={days ?? []} day={values.dia || ''} pickDay={chooseDay}
+          time={values.fechaTurno} pickTime={time => {
+            setValues(prev => ({ ...prev, fechaTurno: time }));
+            setErrors(prev => ({ ...prev, fechaTurno: '' }));
+          }}
+          busy={busy || checkingSlots} error={availabilityError || errors.fechaTurno}/>}
+    </fieldset>;
+    const options = field.options; const props = { id, name: field.key, value: values[field.key] || '', disabled: busy, required: !field.optional && !field.fixed, isInvalid: !!errors[field.key], 'aria-describedby': errors[field.key] ? `${id}-error` : undefined, onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => { setValues(v => ({ ...v, [field.key]: event.target.value, ...(['medico', 'franja', 'paciente'].includes(field.key) ? { fechaTurno: '' } : {}) })); setErrors(old => { const next = { ...old }; delete next[field.key]; return next; }); } }; return <Form.Group key={field.key} className={field.wide ? 'field-wide' : ''}><Form.Label htmlFor={id}>{field.label}{field.fixed ? null : field.optional ? <span className="optional"> · opcional</span> : <span className="required-mark"> *</span>}</Form.Label>{field.fixed ? <Form.Control {...props} value={field.fixed.label} readOnly/> : options || field.groups ? <Form.Select {...props}><option value="">Seleccioná una opción</option>{options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       {field.groups?.map(group => <optgroup key={group.label} label={group.label}>
         {group.options.map(option => <option key={option.value || option.label} value={option.value} disabled={!option.value}>{option.label}</option>)}
       </optgroup>)}</Form.Select> : field.type === 'textarea' ? <Form.Control {...props} as="textarea" rows={3} maxLength={field.key === 'observaciones' ? 500 : 300}/> : <Form.Control {...props} type={field.type || 'text'} placeholder={field.placeholder} inputMode={['dni', 'numero', 'direccion.numero', 'telefono.codigoArea', 'telefono.numero'].includes(field.key) ? 'numeric' : undefined}/>}<Form.Control.Feedback id={`${id}-error`} type="invalid">{errors[field.key]}</Form.Control.Feedback>

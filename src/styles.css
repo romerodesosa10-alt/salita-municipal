@@ -263,3 +263,16 @@ body{margin:0;font-family:Inter,"Segoe UI",sans-serif;color:var(--ink);backgroun
 
 .turno-card .card-footer { flex-wrap: wrap; }
 .turno-card .card-footer .patient-status { flex: 1 1 8rem; }
+.availability-days, .availability-times { display: grid; gap: 8px; }
+.availability-days { grid-template-columns: repeat(auto-fit, minmax(4.2rem, 1fr)); }
+.availability-times { grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr)); }
+.availability-option {
+  display: grid; gap: 2px; padding: 8px 4px; border: 1px solid #b9ccc5;
+  border-radius: 8px; background: #f4f7f6; color: #465953; text-align: center;
+}
+.availability-option small { font-size: .7rem; }
+.availability-option[data-state="free"] { background: #dcf6e7; color: #00573e; border-color: #76bc9f; }
+.availability-option[data-state="full"] { background: #ffe6e6; color: #8c2032; border-color: #df9ca7; }
+.availability-option[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #00664f; }
+.availability-option:focus-visible { outline: 2px solid #00664f; outline-offset: 2px; }
+.availability-option:disabled { cursor: default; }

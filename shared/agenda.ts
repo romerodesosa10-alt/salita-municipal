@@ -50,3 +50,20 @@ export function isScheduledAppointment(date: string, agenda?: HorarioMedico[]) {
   const time = local.slice(11, 16);
   return local.slice(17, 23) === '00.000' && shifts.some(shift => appointmentTimes(day, shift.id, agenda).includes(time));
 }
+
+export type AppointmentAvailability = { day: string; slots: { time: string; available: boolean }[] };
+
+export function addCalendarDays(day: string, count: number) {
+  const date = new Date(day + 'T12:00:00Z');
+  date.setUTCDate(date.getUTCDate() + count);
+  return date.toISOString().slice(0, 10);
+}
+
+export function localAppointmentDay() {
+  return new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+export function appointmentWeekStart(day: string) {
+  const weekday = new Date(day + 'T12:00:00Z').getUTCDay();
+  return addCalendarDays(day, -((weekday + 6) % 7));
+}
