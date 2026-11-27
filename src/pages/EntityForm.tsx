@@ -231,6 +231,13 @@ function FormBody({ entity, fields: formFields, record, referral, query = '', do
       {field.groups?.map(group => <optgroup key={group.label} label={group.label}>
         {group.options.map(option => <option key={option.value || option.label} value={option.value} disabled={!option.value || option.disabled}>{option.label}</option>)}
       </optgroup>)}</Form.Select> : field.type === 'textarea' ? <Form.Control {...props} as="textarea" rows={3} maxLength={field.key === 'observaciones' ? 500 : 300}/> : <Form.Control {...props} type={field.type || 'text'} placeholder={field.placeholder} inputMode={['dni', 'numero', 'direccion.numero', 'telefono.codigoArea', 'telefono.numero'].includes(field.key) ? 'numeric' : undefined}/>}<Form.Control.Feedback id={`${id}-error`} type="invalid">{errors[field.key]}</Form.Control.Feedback>
+      {field.key === 'medico' && doctors.some(item => item.estado === 'de-licencia') && <div className="alert alert-danger mt-2 mb-0">
+        <strong>Profesionales de licencia</strong>
+        <ul className="mb-1">
+          {doctors.filter(item => item.estado === 'de-licencia').map(item => <li key={item.id}>{item.nombre} {item.apellido}</li>)}
+        </ul>
+        <div>Durante la licencia, elegí otro profesional para solicitar un turno.</div>
+      </div>}
       {field.key === 'medico' && doctor && <div className="mt-2">
         <strong>Horarios de atención</strong>
         {doctor.agenda ? <ul className="mb-0">
