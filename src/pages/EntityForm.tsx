@@ -23,7 +23,7 @@ const phone: Field[] = [{ key: 'telefono.codigoArea', label: 'Código de área',
 const fields: Record<Exclude<Entity, 'turnos'>, Field[]> = {
   pacientes: [...personal, { key: 'dni', label: 'DNI', placeholder: 'Sin puntos ni espacios' }, { key: 'email', label: 'Email', type: 'email' }, ...phone, { key: 'direccion.calle', label: 'Calle' }, { key: 'direccion.numero', label: 'Altura' }, { key: 'direccion.barrio', label: 'Barrio' }, { key: 'obraSocial.nombre', label: '¿Tiene obra social?', options: opcionesCobertura.map(nombre => ({ value: nombre, label: nombre })) }],
   medicos: [...personal, { key: 'matricula', label: 'Matrícula', placeholder: 'Ej.: MP-12345' }, { key: 'especialidad', label: 'Especialidad', placeholder: 'Ej.: Clínica médica' }, { key: 'email', label: 'Email', type: 'email' }, ...phone],
-  consultorios: [{ key: 'nombre', label: 'Nombre', placeholder: 'Ej.: Consultorio general' }, { key: 'numero', label: 'Número', placeholder: 'Ej.: 1' }, { key: 'ubicacion', label: 'Ubicación', placeholder: 'Ej.: Planta baja, sector A', wide: true }, { key: 'descripcion', label: 'Descripción', type: 'textarea', optional: true, wide: true }],
+  consultorios: [{ key: 'numero', label: 'Número', placeholder: 'Ej.: 1' }, { key: 'ubicacion', label: 'Ubicación', placeholder: 'Ej.: Planta baja, sector A', wide: true }, { key: 'descripcion', label: 'Descripción', type: 'textarea', optional: true, wide: true }],
 };
 function nest(values: Record<string, string>) {
   const result: Record<string, unknown> = {};
@@ -156,7 +156,7 @@ function FormBody({ entity, fields: formFields, record, referral, query = '', do
     return [field.key, typeof value === 'string' ? value : field.fixed?.value ?? ''];
   }))); const [errors, setErrors] = useState<Record<string, string>>({}); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
   const [roomChoice, setRoomChoice] = useState(record && 'matricula' in record ? record.consultorioId ?? '' : '');
-  const [newRoom, setNewRoom] = useState({ nombre: '', numero: '', ubicacion: '', descripcion: '' });
+  const [newRoom, setNewRoom] = useState({ numero: '', ubicacion: '', descripcion: '' });
   const rooms = useFetch<Consultorio[]>(entity === 'medicos' ? '/consultorios' : '');
   const [agenda, setAgenda] = useState<HorarioMedico[]>(() => record && 'agenda' in record ? record.agenda ?? [] : []);
   const doctor = doctors.find(item => item.id === values.medico);
@@ -185,12 +185,13 @@ function FormBody({ entity, fields: formFields, record, referral, query = '', do
   async function submit(event: FormEvent) {
     event.preventDefault(); if (submitting.current) return; setError('');
     const payload = nest(values);
+    if (entity === 'consultorios') payload.nombre = 'Consultorio ' + values.numero.trim();
     if (entity === 'pacientes') {
       payload.obraSocial = { nombre: values['obraSocial.nombre'], numeroAfiliado: '' };
     }
     if (entity === 'medicos') {
       if (roomChoice === 'nuevo') {
-        payload.consultorioNuevo = { ...newRoom, nombre: newRoom.nombre.trim() || (newRoom.numero.trim() ? 'Consultorio ' + newRoom.numero.trim() : '') };
+        payload.consultorioNuevo = { ...newRoom, nombre: newRoom.numero.trim() ? 'Consultorio ' + newRoom.numero.trim() : '' };
       } else {
         payload.consultorioId = roomChoice || null;
       }
@@ -281,7 +282,6 @@ function FormBody({ entity, fields: formFields, record, referral, query = '', do
       </Form.Group>
       {roomChoice === 'nuevo' && <div className="form-fields mt-3">
         {([
-          ['nombre', 'Nombre (opcional)', 'Ej.: Consultorio general'],
           ['numero', 'Número', 'Ej.: 1'],
           ['ubicacion', 'Ubicación', 'Ej.: Planta baja, sector A'],
           ['descripcion', 'Descripción (opcional)', 'Ej.: Primera puerta a la derecha'],
