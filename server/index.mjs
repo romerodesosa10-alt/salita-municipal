@@ -118,7 +118,7 @@ async function handleApi(req, res) {
           if (Date.parse(startsAt) <= now) return [];
           const overlapping = overlappingAppointments(startsAt, original?.id);
           const free = doctor.estado !== 'de-licencia' && !overlapping.some(row => row.medico === doctor.id || row.paciente === patientId) &&
-            Boolean(availableRoom(rooms, overlapping));
+            Boolean(availableRoom(rooms, overlapping, doctor.consultorioId));
           return [{ time, available: free }];
         });
         return { day: date, slots };
@@ -198,6 +198,9 @@ async function handleApi(req, res) {
       const ids = new Set(parsed.data.ids);
       const selected = scoped.filter(row => ids.has(row.id));
       if (selected.length !== ids.size) return respond(res, 409, 'La selección cambió. Actualizá la lista y volvé a intentarlo.');
+      if (entity === 'consultorios' && db.medicos.some(doctor => !doctor.archivado && ids.has(doctor.consultorioId))) {
+        return respond(res, 409, 'Desasigná el consultorio de sus médicos antes de eliminarlo.');
+      }
       for (const record of selected) record.archivado = true;
       try { await save(); } catch (error) {
         for (const record of selected) delete record.archivado;
@@ -226,7 +229,7 @@ async function handleApi(req, res) {
       if (editing && !existing) return respond(res, 404, 'No se encontró el registro.');
       const result = (urgent ? derivacionTurnoSchema : schemas[entity]).safeParse(body);
       if (!result.success) { const errors = {}; for (const issue of result.error.issues) errors[issue.path.join('.')] ??= issue.message; return respond(res, 400, 'Revisá los campos del formulario.', null, errors); }
-      const { motivoDerivacion, ...data } = result.data;
+      const { motivoDerivacion, consultorioNuevo, ...data } = result.data;
       if (original && original.paciente !== data.paciente) return respond(res, 400, 'La derivación debe corresponder al paciente del turno.');
       const derivacion = urgent ? {
         motivo: motivoDerivacion,
@@ -236,11 +239,30 @@ async function handleApi(req, res) {
       } : undefined;
       const unique = { pacientes: 'dni', medicos: 'matricula', consultorios: 'numero' }[entity];
       if (unique && db[entity].some(x => x.id !== existing?.id && x.salitaId === salitaId && x[unique].toLowerCase() === data[unique].toLowerCase())) return respond(res, 409, 'Ya existe un registro con ese dato.', null, { [unique]: 'Este valor ya está registrado.' });
+      let newRoom;
+      if (entity === 'medicos') {
+        const rooms = db.consultorios.filter(room => room.salitaId === salitaId);
+        if (data.consultorioId && !rooms.some(room => room.id === data.consultorioId && !room.archivado)) {
+          return respond(res, 400, 'El consultorio seleccionado no está disponible.', null, { consultorioId: 'Elegí un consultorio válido.' });
+        }
+        if (consultorioNuevo) {
+          if (rooms.some(room => Number(room.numero) === Number(consultorioNuevo.numero))) {
+            return respond(res, 409, 'Ya existe un consultorio con ese número.', null, { 'consultorioNuevo.numero': 'Este número ya está registrado.' });
+          }
+          newRoom = { ...consultorioNuevo, id: randomUUID(), salitaId };
+          data.consultorioId = newRoom.id;
+          db.consultorios.push(newRoom);
+        }
+      }
       if (existing) {
         const index = db[entity].indexOf(existing);
         const updated = { ...existing, ...data };
         db[entity][index] = updated;
-        try { await save(); } catch (error) { db[entity][index] = existing; throw error; }
+        try { await save(); } catch (error) {
+          db[entity][index] = existing;
+          if (newRoom) db.consultorios.pop();
+          throw error;
+        }
         return respond(res, 200, 'Registro actualizado.', updated);
       }
       if (entity === 'turnos') {
@@ -265,7 +287,10 @@ async function handleApi(req, res) {
         const overlapping = overlappingAppointments(data.fechaTurno, original?.id);
         const conflict = overlapping.some(x => x.medico === data.medico || x.paciente === data.paciente);
         if (conflict) return respond(res, 409, 'El paciente o el médico ya tiene un turno en ese horario. Elegí otro.');
-        const available = availableRoom(rooms, overlapping, data.consultorio);
+        if (doctor.consultorioId && data.consultorio && doctor.consultorioId !== data.consultorio) {
+          return respond(res, 400, 'Usá el consultorio asignado al profesional.');
+        }
+        const available = availableRoom(rooms, overlapping, doctor.consultorioId || data.consultorio);
         if (!available) return respond(res, 409, 'No hay consultorios libres en esta salita para ese horario.');
         data.consultorio = available.id;
       }
@@ -277,7 +302,12 @@ async function handleApi(req, res) {
         return respond(res, 200, 'Turno derivado con urgencia.', populate(updated));
       }
       const record = { ...data, ...(derivacion ? { derivacion } : {}), id: randomUUID(), salitaId, ...(entity === 'turnos' ? { fechaTurno: new Date(data.fechaTurno).toISOString(), estado: 'pendiente' } : {}) };
-      db[entity].push(record); try { await save(); } catch (error) { db[entity].pop(); throw error; }
+      db[entity].push(record);
+      try { await save(); } catch (error) {
+        db[entity].pop();
+        if (newRoom) db.consultorios.pop();
+        throw error;
+      }
       if (entity !== 'turnos') return respond(res, 201, 'Registro creado correctamente.', record);
       const appointment = populate(record);
       const sms = actor.rol === 'admin' ? await notifyAppointmentSms(appointment.paciente, appointment) : undefined;

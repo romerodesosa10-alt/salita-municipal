@@ -30,11 +30,17 @@ export const agendaMedicaSchema = z.array(z.object({
 );
 export const medicoSchema = z.object({ nombre: text('Nombre'), apellido: text('Apellido'), matricula: z.string().trim().min(3, 'La matrícula debe tener al menos 3 caracteres.').max(30), especialidad: text('Especialidad'), email, telefono: phone, agenda: agendaMedicaSchema.optional() });
 export const consultorioSchema = z.object({ nombre: text('Nombre del consultorio'), numero: z.string().trim().regex(/^\d{1,4}$/, 'Ingresá un número de consultorio válido.'), ubicacion: text('Ubicación'), descripcion: z.string().trim().max(300, 'Máximo 300 caracteres.') });
+export const medicoRegistroSchema = medicoSchema.extend({
+  consultorioId: z.string().min(1).nullable().optional(),
+  consultorioNuevo: consultorioSchema.optional(),
+}).refine(data => !data.consultorioId || !data.consultorioNuevo, {
+  path: ['consultorioId'], message: 'Elegí un consultorio existente o creá uno nuevo.',
+});
 export const turnoSchema = z.object({ paciente: z.string().min(1, 'Seleccioná un paciente.'), medico: z.string().min(1, 'Seleccioná un médico.'), consultorio: z.string().min(1).optional(), fechaTurno: z.string().refine(s => Number.isFinite(Date.parse(s)), 'Ingresá una fecha y hora válida.').refine(s => Date.parse(s) > Date.now(), 'El turno debe ser a futuro.'), observaciones: z.string().trim().max(500, 'Máximo 500 caracteres.') });
 export const derivacionTurnoSchema = turnoSchema.extend({
   motivoDerivacion: z.string().trim().min(1, 'Ingresá el motivo de la derivación.').max(300, 'Máximo 300 caracteres.'),
 });
-export const schemas = { pacientes: pacienteSchema, medicos: medicoSchema, consultorios: consultorioSchema, turnos: turnoSchema };
+export const schemas = { pacientes: pacienteSchema, medicos: medicoRegistroSchema, consultorios: consultorioSchema, turnos: turnoSchema };
 export type Entity = keyof typeof schemas;
 export type PacienteInput = z.infer<typeof pacienteSchema>;
 export type MedicoInput = z.infer<typeof medicoSchema>;
@@ -47,7 +53,7 @@ export type EstadoPaciente = typeof estadosPaciente[number];
 export interface Paciente extends PacienteInput { id: string; estado?: EstadoPaciente }
 export const estadoMedicoSchema = z.object({ estado: z.enum(['disponible', 'de-licencia']) }).strict();
 export type EstadoMedico = z.infer<typeof estadoMedicoSchema>['estado'];
-export interface Medico extends MedicoInput { id: string; estado?: EstadoMedico }
+export interface Medico extends MedicoInput { id: string; estado?: EstadoMedico; consultorioId?: string | null }
 export interface Consultorio extends ConsultorioInput { id: string }
 export const estadosTurno = ['pendiente', 'atendido', 'cancelado'] as const;
 export const cancelarTurnoSchema = z.object({ motivo: z.string().trim().min(1, 'Ingresá el motivo de la cancelación.').max(300) }).strict();

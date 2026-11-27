@@ -85,7 +85,7 @@ function TurnoSiteForm({ query, patients, referral }: { query: string; patients:
   if (referral && !referredPatient) return <ErrorNotice message="No se encontró el paciente para derivar."/>;
   const missing = [!referredPatient && !patients.length && 'pacientes', !doctors.data?.length && 'medicos', !rooms.data?.length && 'consultorios'].filter(Boolean) as Entity[];
   if (missing.length && user?.rol === 'cliente') return <div className="form-card"><h1>La agenda todavía no está disponible</h1><p>La sede seleccionada todavía debe registrar sus profesionales y consultorios para recibir turnos.</p></div>;
-  if (missing.length) return <div className="form-card"><h1>Prepará tu primer turno</h1><p>Antes de reservar, necesitás registros en estas secciones:</p>{missing.map(key => <Link className="btn btn-outline-primary me-2 mb-2" key={key} to={`/${key}/nuevo`}>Crear {entities[key].singular}</Link>)}</div>;
+  if (missing.length) return <div className="form-card"><h1>Prepará tu primer turno</h1><p>Antes de reservar, necesitás registros en estas secciones:</p>{missing.filter(key => key !== 'consultorios').map(key => <Link className="btn btn-outline-primary me-2 mb-2" key={key} to={`/${key}/nuevo`}>Crear {entities[key].singular}</Link>)}{missing.includes('consultorios') && <p>Cargá el consultorio desde <Link to="/medicos">Médicos</Link>, al registrar o editar un profesional.</p>}</div>;
   const options = (list: (Paciente | Medico)[]): Option[] => list.map(person => {
     const onLeave = 'especialidad' in person && person.estado === 'de-licencia';
     const detail = 'especialidad' in person ? person.especialidad : 'DNI ' + person.dni;
@@ -154,6 +154,9 @@ function FormBody({ entity, fields: formFields, record, referral, query = '', do
       record?.[key as keyof (Medico | Consultorio)];
     return [field.key, typeof value === 'string' ? value : field.fixed?.value ?? ''];
   }))); const [errors, setErrors] = useState<Record<string, string>>({}); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
+  const [roomChoice, setRoomChoice] = useState(record && 'matricula' in record ? record.consultorioId ?? '' : '');
+  const [newRoom, setNewRoom] = useState({ nombre: '', numero: '', ubicacion: '', descripcion: '' });
+  const rooms = useFetch<Consultorio[]>(entity === 'medicos' ? '/consultorios' : '');
   const [agenda, setAgenda] = useState<HorarioMedico[]>(() => record && 'agenda' in record ? record.agenda ?? [] : []);
   const doctor = doctors.find(item => item.id === values.medico);
   const [week, setWeek] = useState(() => appointmentWeekStart(localAppointmentDay()));
@@ -183,6 +186,13 @@ function FormBody({ entity, fields: formFields, record, referral, query = '', do
     const payload = nest(values);
     if (entity === 'pacientes') {
       payload.obraSocial = { nombre: values['obraSocial.nombre'], numeroAfiliado: '' };
+    }
+    if (entity === 'medicos') {
+      if (roomChoice === 'nuevo') {
+        payload.consultorioNuevo = { ...newRoom, nombre: newRoom.nombre.trim() || (newRoom.numero.trim() ? 'Consultorio ' + newRoom.numero.trim() : '') };
+      } else {
+        payload.consultorioId = roomChoice || null;
+      }
     }
     if (entity === 'medicos' && (!record || agenda.length > 0 || ('agenda' in record && record.agenda))) payload.agenda = agenda;
     if (entity === 'turnos') {
@@ -253,6 +263,34 @@ function FormBody({ entity, fields: formFields, record, referral, query = '', do
         </ul> : <p className="muted mb-0">Lunes a viernes, de 08:00 a 12:00 y de 14:00 a 18:00.</p>}
       </div>}
     </Form.Group>; })}
+    {entity === 'medicos' && <fieldset className="field-wide border rounded p-3" disabled={busy}>
+      <legend className="fs-5 mb-2">Consultorio asignado</legend>
+      {rooms.error && <ErrorNotice message={rooms.error} retry={rooms.refetch}/>}
+      <Form.Group controlId="medico-consultorio">
+        <Form.Label>Consultorio</Form.Label>
+        <Form.Select value={roomChoice} onChange={event => setRoomChoice(event.target.value)}
+          disabled={rooms.isLoading || !!rooms.error} isInvalid={!!errors.consultorioId}>
+          <option value="">Sin asignar</option>
+          {rooms.data?.map(room => <option key={room.id} value={room.id}>{room.nombre} · N.º {room.numero} · {room.ubicacion}</option>)}
+          <option value="nuevo">Registrar un consultorio nuevo</option>
+        </Form.Select>
+        <Form.Control.Feedback type="invalid">{errors.consultorioId}</Form.Control.Feedback>
+      </Form.Group>
+      {roomChoice === 'nuevo' && <div className="form-fields mt-3">
+        {([
+          ['nombre', 'Nombre (opcional)', 'Ej.: Consultorio general'],
+          ['numero', 'Número', 'Ej.: 1'],
+          ['ubicacion', 'Ubicación', 'Ej.: Planta baja, sector A'],
+          ['descripcion', 'Descripción (opcional)', 'Ej.: Primera puerta a la derecha'],
+        ] as const).map(([key, label, placeholder]) => <Form.Group key={key} controlId={'consultorio-nuevo-' + key}>
+          <Form.Label>{label}</Form.Label>
+          <Form.Control name={'consultorioNuevo.' + key} value={newRoom[key]} placeholder={placeholder}
+            inputMode={key === 'numero' ? 'numeric' : undefined} isInvalid={!!errors['consultorioNuevo.' + key]}
+            onChange={event => setNewRoom(previous => ({ ...previous, [key]: event.target.value }))}/>
+          <Form.Control.Feedback type="invalid">{errors['consultorioNuevo.' + key]}</Form.Control.Feedback>
+        </Form.Group>)}
+      </div>}
+    </fieldset>}
     {entity === 'medicos' && <AgendaMedica slots={agenda} onChange={setAgenda} disabled={busy} error={errors.agenda}/>}
     </div><div className="form-actions"><Link to={`/${entity}`} className={`btn btn-outline-secondary ${busy ? 'disabled' : ''}`} aria-disabled={busy}>Cancelar</Link><Button type="submit" disabled={busy}>{busy ? 'Guardando…' : <><Check size={17}/> Guardar {referral ? 'derivación' : record ? 'cambios' : config.singular}</>}</Button></div></Form></section><aside className="form-help"><span className="record-icon teal"><Info size={21}/></span><h2>Los detalles hacen la diferencia.</h2><p>Los campos con asterisco son obligatorios. Revisá la información antes de guardar.</p>{entity === 'turnos' ? <p>Los turnos duran 30 minutos. El paciente, profesional y consultorio deben estar disponibles durante ese intervalo.</p> : <p>Los datos estarán disponibles en el listado apenas se confirme el guardado.</p>}<div className="help-divider"/><small>Este entorno educativo comienza con datos ficticios para practicar.</small></aside></div></>;
 }
