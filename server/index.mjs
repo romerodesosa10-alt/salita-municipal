@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from '
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appointmentMinutes, isScheduledAppointment } from '../shared/agenda.ts';
-import { estadoPacienteSchema, estadoTurnoSchema, eliminarSeleccionSchema, schemas } from '../shared/schemas.ts';
+import { cancelarTurnoSchema, estadoPacienteSchema, estadoTurnoSchema, eliminarSeleccionSchema, schemas } from '../shared/schemas.ts';
 import { initializeAccounts, accountService } from './accounts.mjs';
 import express from 'express';
 import { openMongoStore } from './mongo-store.mjs';
@@ -71,7 +71,7 @@ async function handleApi(req, res) {
     const actor = accounts.authenticate(req);
     if (!actor) return respond(res, 401, 'Tu sesión venció. Volvé a ingresar.');
     if (await accounts.privateRoute(path, req, res, actor)) return;
-    const match = path.match(/^\/api\/v1\/(pacientes|medicos|consultorios|turnos)(?:\/([^/]+))?(?:\/(atender|estado))?$/);
+    const match = path.match(/^\/api\/v1\/(pacientes|medicos|consultorios|turnos)(?:\/([^/]+))?(?:\/(atender|estado|cancelar))?$/);
     if (!match) return respond(res, 404, 'La ruta no existe.');
     const [, entity, id, action] = match;
     const requestedSite = url.searchParams.get('salitaId');
@@ -87,6 +87,33 @@ async function handleApi(req, res) {
       if (actor.rol === 'cliente' && entity === 'pacientes') return row.id === actor.pacienteId;
       return row.salitaId === salitaId;
     });
+    if (entity === 'turnos' && id && action === 'cancelar' && req.method === 'PATCH') {
+      if (actor.rol !== 'cliente') return respond(res, 403, 'Solo el paciente puede cancelar su turno desde el portal.');
+      const record = scoped.find(row => row.id === id);
+      if (!record) return respond(res, 404, 'No se encontró el turno.');
+      const now = Date.now();
+      if (record.estado !== 'pendiente' || Date.parse(record.fechaTurno) <= now) {
+        return respond(res, 409, 'Solo podés cancelar turnos futuros que estén en espera.');
+      }
+      const parsed = cancelarTurnoSchema.safeParse(await readBody(req));
+      if (!parsed.success) return respond(res, 400, 'Ingresá un motivo de hasta 300 caracteres.');
+
+      const previous = { ...record };
+      const previousBlock = actor.turnosBloqueadosHasta;
+      const bloqueadoHasta = new Date(now + 24 * 60 * 60 * 1000).toISOString();
+      record.estado = 'cancelado';
+      record.motivoCancelacion = parsed.data.motivo;
+      actor.turnosBloqueadosHasta = bloqueadoHasta;
+      try { await save(); } catch (error) {
+        record.estado = previous.estado;
+        if (previous.motivoCancelacion === undefined) delete record.motivoCancelacion;
+        else record.motivoCancelacion = previous.motivoCancelacion;
+        if (previousBlock === undefined) delete actor.turnosBloqueadosHasta;
+        else actor.turnosBloqueadosHasta = previousBlock;
+        throw error;
+      }
+      return respond(res, 200, 'Turno cancelado.', { bloqueadoHasta });
+    }
     if (actor.rol === 'cliente' && req.method !== 'GET' && !(entity === 'turnos' && req.method === 'POST' && !id)) return respond(res, 403, 'No tenés permisos para esta operación.');
     if (!action && ((entity === 'pacientes' && req.method === 'PATCH' && id) || (req.method === 'DELETE' && !id))) {
       if (actor.rol !== 'admin') return respond(res, 403, 'Solo la administración de la salita puede modificar estas fichas.');
@@ -144,6 +171,11 @@ async function handleApi(req, res) {
         return respond(res, 200, 'Registro actualizado.', updated);
       }
       if (entity === 'turnos') {
+        if (actor.rol === 'cliente' && Date.parse(actor.turnosBloqueadosHasta || '') > Date.now()) {
+          return respond(res, 409, 'Todavía no podés solicitar otro turno. Consultá el contador en tu portal.', {
+            bloqueadoHasta: actor.turnosBloqueadosHasta,
+          });
+        }
         if (actor.rol === 'cliente' && data.paciente !== actor.pacienteId) return respond(res, 403, 'Solo podés solicitar turnos para tu propia cuenta.');
         const errors = {};
         const patient = db.pacientes.find(x => x.id === data.paciente);

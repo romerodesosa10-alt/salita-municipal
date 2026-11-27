@@ -49,7 +49,7 @@ export async function initializeAccounts(db, save, mongo = false) {
 }
 export function accountService(db, save, respond, readBody) {
   const sessions = new Map(); const attempts = new Map();
-  const publicUser = user => ({ id: user.id, usuario: user.usuario, nombre: user.nombre, rol: user.rol, salitaId: user.salitaId, salitaNombre: db.salitas.find(x => x.id === user.salitaId)?.nombre || null, pacienteId: user.pacienteId });
+  const publicUser = user => ({ id: user.id, usuario: user.usuario, nombre: user.nombre, rol: user.rol, salitaId: user.salitaId, salitaNombre: db.salitas.find(x => x.id === user.salitaId)?.nombre || null, pacienteId: user.pacienteId, turnosBloqueadosHasta: user.turnosBloqueadosHasta });
   const adminView = user => ({ ...publicUser(user), email: user.email, bloqueado: Boolean(user.bloqueado) });
   function revokeSessions(userId, exceptToken) {
     for (const [token, session] of sessions) {

@@ -45,6 +45,7 @@ export interface Paciente extends PacienteInput { id: string; estado?: EstadoPac
 export interface Medico extends MedicoInput { id: string }
 export interface Consultorio extends ConsultorioInput { id: string }
 export const estadosTurno = ['pendiente', 'atendido', 'cancelado'] as const;
+export const cancelarTurnoSchema = z.object({ motivo: z.string().trim().min(1, 'Ingresá el motivo de la cancelación.').max(300) }).strict();
 export const estadoTurnoSchema = z.object({ estado: z.enum(estadosTurno) }).strict();
 export type EstadoTurno = typeof estadosTurno[number];
 export const estadoTurnoLabels: Record<EstadoTurno, string> = {
@@ -53,10 +54,10 @@ export const estadoTurnoLabels: Record<EstadoTurno, string> = {
   cancelado: 'Cancelado',
 };
 
-export interface ITurno { id: string; salitaNombre?: string; paciente: Paciente | null; medico: Medico | null; consultorio: Consultorio | null; fechaTurno: string; estado: EstadoTurno; especialidad: string; observaciones: string }
+export interface ITurno { id: string; salitaNombre?: string; motivoCancelacion?: string; paciente: Paciente | null; medico: Medico | null; consultorio: Consultorio | null; fechaTurno: string; estado: EstadoTurno; especialidad: string; observaciones: string }
 export interface EntityMap { pacientes: Paciente; medicos: Medico; consultorios: Consultorio; turnos: ITurno }
 export type Role = 'superadmin' | 'admin' | 'cliente';
-export interface User { id: string; nombre: string; usuario: string; rol: Role; salitaId: string | null; salitaNombre: string | null; pacienteId: string | null }
+export interface User { id: string; nombre: string; usuario: string; rol: Role; salitaId: string | null; salitaNombre: string | null; pacienteId: string | null; turnosBloqueadosHasta?: string }
 export interface Salita { id: string; nombre: string; direccion: string }
 const username = z.string().trim().toLowerCase().regex(/^[a-z0-9._-]{3,40}$/, 'Usuario: entre 3 y 40 letras, números, puntos, guiones o guiones bajos.');
 const password = z.string().min(10, 'La contraseña debe tener al menos 10 caracteres.').max(128, 'Máximo 128 caracteres.');

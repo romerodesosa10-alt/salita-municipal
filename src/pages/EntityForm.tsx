@@ -1,3 +1,5 @@
+import { isAxiosError } from 'axios';
+import { BookingCountdown, useBookingCountdown } from '../components/BookingCountdown';
 import BackLink from '../components/BackLink';
 import { useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -26,7 +28,11 @@ function nest(values: Record<string, string>) {
   for (const [path, value] of Object.entries(values)) { const [parent, child] = path.split('.'); if (child) { const group = (result[parent] || {}) as Record<string, string>; group[child] = value; result[parent] = group; } else result[parent] = value; }
   return result;
 }
-export default function EntityForm({ entity }: { entity: Entity }) { return entity === 'turnos' ? <TurnoForm/> : <FormBody entity={entity} fields={fields[entity]}/>; }
+export default function EntityForm({ entity }: { entity: Entity }) { return entity === 'turnos' ? <TurnoBooking/> : <FormBody entity={entity} fields={fields[entity]}/>; }
+function TurnoBooking() {
+  const seconds = useBookingCountdown();
+  return seconds > 0 ? <><BackLink to="/mi-portal"/><BookingCountdown seconds={seconds}/></> : <TurnoForm/>;
+}
 function TurnoForm() {
   const { user } = useAuth();
   const [selectedSite, setSelectedSite] = useState('');
@@ -116,6 +122,7 @@ export function EditEntityForm({ entity }: { entity: 'medicos' | 'consultorios' 
 }
 
 function FormBody({ entity, fields: formFields, record, query = '', doctors = [] }: { entity: Entity; fields: Field[]; record?: Medico | Consultorio; query?: string; doctors?: Medico[] }) {
+  const { updateBookingBlock } = useAuth();
   const config = entities[entity]; const Icon = config.icon; const navigate = useNavigate(); const formRef = useRef<HTMLFormElement>(null); const submitting = useRef(false);
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(formFields.map(field => {
     const [key, child] = field.key.split('.');
@@ -147,7 +154,12 @@ function FormBody({ entity, fields: formFields, record, query = '', doctors = []
       toast.success(record ? 'Cambios guardados.' : `${config.singular[0].toUpperCase() + config.singular.slice(1)} creado correctamente.`);
       navigate(`/${entity}`);
     }
-    catch (error) { const next = serverErrors(error); setErrors(next); setError(errorMessage(error)); toast.error(errorMessage(error)); if (Object.keys(next).length) focusError(next); }
+    catch (error) {
+      if (isAxiosError<ApiResponse<{ bloqueadoHasta?: string }>>(error)) {
+        const until = error.response?.data?.data?.bloqueadoHasta;
+        if (until) updateBookingBlock(until);
+      }
+      const next = serverErrors(error); setErrors(next); setError(errorMessage(error)); toast.error(errorMessage(error)); if (Object.keys(next).length) focusError(next); }
     finally { submitting.current = false; setBusy(false); }
   }
   return <>{entity !== 'turnos' && <Link to={`/${entity}`} className="back-link"><ArrowLeft size={16}/> Volver a {config.title.toLowerCase()}</Link>}<div className="page-heading"><div><span className="eyebrow">{record ? 'EDITAR REGISTRO' : 'NUEVO REGISTRO'}</span><h1>{record ? 'Editar' : 'Nuevo'} {config.singular}</h1><p>{record ? 'Actualizá los datos y guardá los cambios.' : 'Completá los datos para incorporarlo al sistema.'}</p></div></div><div className="form-layout"><section className="form-card"><div className="form-card-heading"><span className={`record-icon ${config.color}`}><Icon size={21}/></span><h2>Datos del {config.singular}</h2></div>{error && <ErrorNotice message={error}/>}<Form noValidate ref={formRef} onSubmit={submit}><div className="form-fields">{formFields.map(field => { const id = 'field-' + field.key.replaceAll('.', '-');
