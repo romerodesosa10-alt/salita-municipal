@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from '
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { addCalendarDays, appointmentDate, appointmentMinutes, appointmentTimes, isScheduledAppointment } from '../shared/agenda.ts';
-import { cancelarTurnoSchema, derivacionTurnoSchema, estadoPacienteSchema, estadoTurnoSchema, eliminarSeleccionSchema, schemas } from '../shared/schemas.ts';
+import { cancelarTurnoSchema, derivacionTurnoSchema, estadoMedicoSchema, estadoPacienteSchema, estadoTurnoSchema, eliminarSeleccionSchema, schemas } from '../shared/schemas.ts';
 import { initializeAccounts, accountService } from './accounts.mjs';
 import express from 'express';
 import { openMongoStore } from './mongo-store.mjs';
@@ -116,7 +116,7 @@ async function handleApi(req, res) {
           const startsAt = appointmentDate(date, time);
           if (Date.parse(startsAt) <= now) return [];
           const overlapping = overlappingAppointments(startsAt, original?.id);
-          const free = !overlapping.some(row => row.medico === doctor.id || row.paciente === patientId) &&
+          const free = doctor.estado !== 'de-licencia' && !overlapping.some(row => row.medico === doctor.id || row.paciente === patientId) &&
             Boolean(availableRoom(rooms, overlapping));
           return [{ time, available: free }];
         });
@@ -158,6 +158,21 @@ async function handleApi(req, res) {
       return respond(res, 200, 'Turno cancelado.', { bloqueadoHasta });
     }
     if (actor.rol === 'cliente' && req.method !== 'GET' && !(entity === 'turnos' && req.method === 'POST' && !id)) return respond(res, 403, 'No tenés permisos para esta operación.');
+    if (entity === 'medicos' && id && action === 'estado' && req.method === 'PATCH') {
+      if (actor.rol !== 'admin') return respond(res, 403, 'Solo la administración de la salita puede cambiar este estado.');
+      const doctor = scoped.find(row => row.id === id);
+      if (!doctor) return respond(res, 404, 'No se encontró el médico.');
+      const parsed = estadoMedicoSchema.safeParse(await readBody(req));
+      if (!parsed.success) return respond(res, 400, 'Seleccioná un estado válido.');
+      const previous = doctor.estado;
+      doctor.estado = parsed.data.estado;
+      try { await save(); } catch (error) {
+        if (previous === undefined) delete doctor.estado;
+        else doctor.estado = previous;
+        throw error;
+      }
+      return respond(res, 200, 'Estado del médico actualizado.', { estado: doctor.estado });
+    }
     if (!action && ((entity === 'pacientes' && req.method === 'PATCH' && id) || (req.method === 'DELETE' && !id))) {
       if (actor.rol !== 'admin') return respond(res, 403, 'Solo la administración de la salita puede modificar estas fichas.');
       const body = await readBody(req);
@@ -193,7 +208,7 @@ async function handleApi(req, res) {
       const selected = id ? scoped.filter(x => x.id === id) : url.searchParams.has('id') ? scoped.filter(x => x.id === url.searchParams.get('id')) : scoped;
       if (id && !selected.length) return respond(res, 404, 'No se encontró el registro.');
       let data = entity === 'turnos' ? selected.map(populate) : selected;
-      if (actor.rol === 'cliente' && entity === 'medicos') data = selected.map(({ id, nombre, apellido, especialidad, agenda }) => ({ id, nombre, apellido, especialidad, agenda }));
+      if (actor.rol === 'cliente' && entity === 'medicos') data = selected.map(({ id, nombre, apellido, especialidad, agenda, estado }) => ({ id, nombre, apellido, especialidad, agenda, estado }));
       return respond(res, 200, 'Consulta realizada.', id ? data[0] : data);
     }
     const editing = req.method === 'PATCH' && id && !action && ['medicos', 'consultorios'].includes(entity);
@@ -239,6 +254,7 @@ async function handleApi(req, res) {
         if (!patient || patient.archivado || (actor.rol !== 'cliente' && !original && patient.salitaId !== salitaId)) errors.paciente = 'El paciente seleccionado no existe.';
         const doctor = db.medicos.find(x => x.id === data.medico && !x.archivado && x.salitaId === salitaId);
         if (!doctor) errors.medico = 'El médico seleccionado no atiende en esta salita.';
+        if (doctor?.estado === 'de-licencia') return respond(res, 409, 'El médico está de licencia. Elegí otro profesional.');
         const rooms = db.consultorios.filter(x => !x.archivado && x.salitaId === salitaId);
         if (data.consultorio && !rooms.some(x => x.id === data.consultorio)) errors.consultorio = 'El consultorio seleccionado no existe en esta salita.';
         if (doctor?.agenda && !isScheduledAppointment(data.fechaTurno, doctor.agenda)) errors.fechaTurno = 'El médico no atiende ese día u horario.';

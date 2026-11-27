@@ -1,3 +1,4 @@
+import DoctorStatus from '../components/DoctorStatus';
 import { isAxiosError } from 'axios';
 import { BookingCountdown, useBookingCountdown } from '../components/BookingCountdown';
 import BackLink from '../components/BackLink';
@@ -15,7 +16,7 @@ import { useAuth } from '../auth/AuthContext';
 import AvailabilityCalendar from '../components/AvailabilityCalendar';
 import AgendaMedica from '../components/AgendaMedica';
 import { ErrorNotice, Loading } from '../components/Feedback';
-type Option = { value: string; label: string };
+type Option = { value: string; label: string; disabled?: boolean };
 type Field = { key: string; label: string; type?: string; placeholder?: string; optional?: boolean; wide?: boolean; options?: Option[]; fixed?: Option; groups?: { label: string; options: Option[] }[] };
 const personal: Field[] = [{ key: 'nombre', label: 'Nombre' }, { key: 'apellido', label: 'Apellido' }];
 const phone: Field[] = [{ key: 'telefono.codigoArea', label: 'Código de área', placeholder: '3492' }, { key: 'telefono.numero', label: 'Teléfono', placeholder: '5550100' }];
@@ -85,7 +86,11 @@ function TurnoSiteForm({ query, patients, referral }: { query: string; patients:
   const missing = [!referredPatient && !patients.length && 'pacientes', !doctors.data?.length && 'medicos', !rooms.data?.length && 'consultorios'].filter(Boolean) as Entity[];
   if (missing.length && user?.rol === 'cliente') return <div className="form-card"><h1>La agenda todavía no está disponible</h1><p>La sede seleccionada todavía debe registrar sus profesionales y consultorios para recibir turnos.</p></div>;
   if (missing.length) return <div className="form-card"><h1>Prepará tu primer turno</h1><p>Antes de reservar, necesitás registros en estas secciones:</p>{missing.map(key => <Link className="btn btn-outline-primary me-2 mb-2" key={key} to={`/${key}/nuevo`}>Crear {entities[key].singular}</Link>)}</div>;
-  const options = (list: (Paciente | Medico)[]) => list.map(x => ({ value: x.id, label: `${x.nombre} ${x.apellido}${'especialidad' in x ? ` · ${x.especialidad}` : ` · DNI ${x.dni}`}` }));
+  const options = (list: (Paciente | Medico)[]): Option[] => list.map(person => {
+    const onLeave = 'especialidad' in person && person.estado === 'de-licencia';
+    const detail = 'especialidad' in person ? person.especialidad : 'DNI ' + person.dni;
+    return { value: person.id, label: [person.nombre + ' ' + person.apellido, detail, ...(onLeave ? ['De licencia'] : [])].join(' · '), disabled: onLeave };
+  });
   const patientOptions = options(patients);
   const patient = referredPatient ? options([referredPatient])[0] : patientOptions.find(option => option.value === user?.pacienteId);
   return <FormBody entity="turnos" referral={referral} query={query} doctors={doctors.data || []} fields={[
@@ -210,7 +215,7 @@ function FormBody({ entity, fields: formFields, record, referral, query = '', do
       const next = serverErrors(error); setErrors(next); setError(errorMessage(error)); toast.error(errorMessage(error)); if (Object.keys(next).length) focusError(next); }
     finally { submitting.current = false; setBusy(false); }
   }
-  return <>{entity !== 'turnos' && <Link to={`/${entity}`} className="back-link"><ArrowLeft size={16}/> Volver a {config.title.toLowerCase()}</Link>}<div className="page-heading"><div><span className="eyebrow">{referral ? 'PRIORIDAD URGENTE' : record ? 'EDITAR REGISTRO' : 'NUEVO REGISTRO'}</span><h1>{referral ? 'Derivar con urgencia' : (record ? 'Editar ' : 'Nuevo ') + config.singular}</h1><p>{referral ? 'Elegí un profesional, un horario y registrá el motivo.' : record ? 'Actualizá los datos y guardá los cambios.' : 'Completá los datos para incorporarlo al sistema.'}</p></div></div><div className="form-layout"><section className="form-card"><div className="form-card-heading"><span className={`record-icon ${config.color}`}><Icon size={21}/></span><h2>Datos del {config.singular}</h2></div>{error && <ErrorNotice message={error}/>}<Form noValidate ref={formRef} onSubmit={submit}><div className="form-fields">{formFields.map(field => { const id = 'field-' + field.key.replaceAll('.', '-');
+  return <>{entity !== 'turnos' && <Link to={`/${entity}`} className="back-link"><ArrowLeft size={16}/> Volver a {config.title.toLowerCase()}</Link>}<div className="page-heading"><div><span className="eyebrow">{referral ? 'PRIORIDAD URGENTE' : record ? 'EDITAR REGISTRO' : 'NUEVO REGISTRO'}</span><h1>{referral ? 'Derivar con urgencia' : (record ? 'Editar ' : 'Nuevo ') + config.singular}</h1><p>{referral ? 'Elegí un profesional, un horario y registrá el motivo.' : record ? 'Actualizá los datos y guardá los cambios.' : 'Completá los datos para incorporarlo al sistema.'}</p></div></div><div className="form-layout"><section className="form-card"><div className="form-card-heading"><span className={`record-icon ${config.color}`}><Icon size={21}/></span><h2>Datos del {config.singular}</h2></div>{record && 'matricula' in record && <DoctorStatus doctor={record}/>} {error && <ErrorNotice message={error}/>}<Form noValidate ref={formRef} onSubmit={submit}><div className="form-fields">{formFields.map(field => { const id = 'field-' + field.key.replaceAll('.', '-');
     if (entity === 'turnos' && field.key === 'fechaTurno') return <fieldset key={field.key} className="field-wide">
       <legend className="form-label">Fecha y horario</legend>
       {!availabilityPath ? <p className="muted mb-0">Elegí un médico y un turno para ver los cupos.</p> :
@@ -224,7 +229,7 @@ function FormBody({ entity, fields: formFields, record, referral, query = '', do
     </fieldset>;
     const options = field.options; const props = { id, name: field.key, value: values[field.key] || '', disabled: busy, required: !field.optional && !field.fixed, isInvalid: !!errors[field.key], 'aria-describedby': errors[field.key] ? `${id}-error` : undefined, onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => { setValues(v => ({ ...v, [field.key]: event.target.value, ...(['medico', 'franja', 'paciente'].includes(field.key) ? { fechaTurno: '' } : {}) })); setErrors(old => { const next = { ...old }; delete next[field.key]; return next; }); } }; return <Form.Group key={field.key} className={field.wide ? 'field-wide' : ''}><Form.Label htmlFor={id}>{field.label}{field.fixed ? null : field.optional ? <span className="optional"> · opcional</span> : <span className="required-mark"> *</span>}</Form.Label>{field.fixed ? <Form.Control {...props} value={field.fixed.label} readOnly/> : options || field.groups ? <Form.Select {...props}><option value="">Seleccioná una opción</option>{options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       {field.groups?.map(group => <optgroup key={group.label} label={group.label}>
-        {group.options.map(option => <option key={option.value || option.label} value={option.value} disabled={!option.value}>{option.label}</option>)}
+        {group.options.map(option => <option key={option.value || option.label} value={option.value} disabled={!option.value || option.disabled}>{option.label}</option>)}
       </optgroup>)}</Form.Select> : field.type === 'textarea' ? <Form.Control {...props} as="textarea" rows={3} maxLength={field.key === 'observaciones' ? 500 : 300}/> : <Form.Control {...props} type={field.type || 'text'} placeholder={field.placeholder} inputMode={['dni', 'numero', 'direccion.numero', 'telefono.codigoArea', 'telefono.numero'].includes(field.key) ? 'numeric' : undefined}/>}<Form.Control.Feedback id={`${id}-error`} type="invalid">{errors[field.key]}</Form.Control.Feedback>
       {field.key === 'medico' && doctor && <div className="mt-2">
         <strong>Horarios de atención</strong>

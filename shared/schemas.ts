@@ -45,7 +45,9 @@ export const estadoPacienteSchema = z.object({ estado: z.enum(estadosPaciente) }
 export const eliminarSeleccionSchema = z.object({ ids: z.array(z.string().min(1)).min(1) }).strict();
 export type EstadoPaciente = typeof estadosPaciente[number];
 export interface Paciente extends PacienteInput { id: string; estado?: EstadoPaciente }
-export interface Medico extends MedicoInput { id: string }
+export const estadoMedicoSchema = z.object({ estado: z.enum(['disponible', 'de-licencia']) }).strict();
+export type EstadoMedico = z.infer<typeof estadoMedicoSchema>['estado'];
+export interface Medico extends MedicoInput { id: string; estado?: EstadoMedico }
 export interface Consultorio extends ConsultorioInput { id: string }
 export const estadosTurno = ['pendiente', 'atendido', 'cancelado'] as const;
 export const cancelarTurnoSchema = z.object({ motivo: z.string().trim().min(1, 'Ingresá el motivo de la cancelación.').max(300) }).strict();

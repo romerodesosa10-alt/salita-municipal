@@ -276,3 +276,5 @@ body{margin:0;font-family:Inter,"Segoe UI",sans-serif;color:var(--ink);backgroun
 .availability-option[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #00664f; }
 .availability-option:focus-visible { outline: 2px solid #00664f; outline-offset: 2px; }
 .availability-option:disabled { cursor: default; }
+.doctor-status-label { border-radius: 8px; padding: 5px 10px; font-weight: 700; background: #dcf6e7; color: #00573e; }
+.doctor-status-label[data-on-leave="true"] { background: #ffe6e6; color: #8c2032; }

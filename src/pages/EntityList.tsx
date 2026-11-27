@@ -1,3 +1,4 @@
+import DoctorStatus from '../components/DoctorStatus';
 import { BookingCountdown, useBookingCountdown } from '../components/BookingCountdown';
 import useRecordRemoval from '../components/useRecordRemoval';
 import BackLink from '../components/BackLink';
@@ -64,6 +65,7 @@ export default function EntityList({ entity }: { entity: Entity }) {
     {canRemove && !isLoading && !error && removal.toolbar}
     {isLoading ? <Skeletons/> : error ? <ErrorNotice message={error} retry={refetch}/> : filtered.length === 0 ? <Empty title={data?.length ? 'No encontramos coincidencias.' : `Todavía no hay ${config.title.toLowerCase()}.`} text={data?.length ? 'Probá con otra búsqueda o cambiá el filtro.' : `Usá “Nuevo ${config.singular}” para agregar el primer registro.`}/> : <div className="records-grid">{filtered.map(row => entity === 'turnos' ? <TurnoCard key={row.id} turno={row as ITurno} onCancelled={user?.rol === 'cliente' ? refetch : undefined} onStatusChange={user?.rol === 'admin' ? cambiarEstadoTurno : undefined} busy={busyId === row.id} removalControls={canRemove && <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">{removal.checkbox(row.id, 'Seleccionar turno', true)}{(row as ITurno).estado === 'pendiente' && (row as ITurno).paciente && <Link className="btn btn-sm btn-outline-danger" to={'/turnos/nuevo?derivar=' + encodeURIComponent(row.id)}>Derivar con urgencia</Link>}{removal.button(row.id)}</div>}/> : <RecordCard key={row.id} entity={entity} record={row} controls={canRemove && <div className="mt-3">
       <div className="d-flex flex-wrap align-items-center justify-content-between gap-2">{removal.checkbox(row.id, 'Seleccionar ' + (row as Paciente | Medico | Consultorio).nombre, true)}{(entity === 'medicos' || entity === 'consultorios') && <Link className="btn btn-sm btn-outline-secondary" to={`/${entity}/${encodeURIComponent(row.id)}/editar`}>Editar</Link>}{removal.button(row.id)}</div>
+      {entity === 'medicos' && <DoctorStatus doctor={row as Medico}/>}
       {managesPatients && <Link className="btn btn-sm btn-outline-danger mt-2" to={'/turnos/nuevo?pacienteUrgente=' + encodeURIComponent(row.id)}>Derivar con urgencia</Link>}
       {managesPatients && <Form.Group className="mt-2" controlId={'estado-' + row.id}>
         <Form.Label className="mb-1">Estado</Form.Label>
