@@ -2,11 +2,11 @@ import { isAxiosError } from 'axios';
 import { BookingCountdown, useBookingCountdown } from '../components/BookingCountdown';
 import BackLink from '../components/BackLink';
 import { useRef, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button, Form } from 'react-bootstrap';
 import { ArrowLeft, Check, Info } from 'lucide-react';
 import { toast } from 'sonner';
-import { schemas, opcionesCobertura, type Entity, type Paciente, type Medico, type Consultorio, type ApiResponse, type Salita } from '../../shared/schemas.ts';
+import { derivacionTurnoSchema, schemas, opcionesCobertura, type Entity, type Paciente, type Medico, type Consultorio, type ApiResponse, type ITurno, type Salita } from '../../shared/schemas.ts';
 import { appointmentDate, appointmentTimes, shifts, weekdays, type HorarioMedico } from '../../shared/agenda.ts';
 import { entities } from '../lib/entities';
 import { api, errorMessage, serverErrors } from '../lib/api';
@@ -29,18 +29,34 @@ function nest(values: Record<string, string>) {
   return result;
 }
 export default function EntityForm({ entity }: { entity: Entity }) { return entity === 'turnos' ? <TurnoBooking/> : <FormBody entity={entity} fields={fields[entity]}/>; }
+type Referral = { patientId: string; original?: ITurno };
+
 function TurnoBooking() {
+  const { user } = useAuth();
+  const [params] = useSearchParams();
+  const originalId = user?.rol === 'admin' ? params.get('derivar') : null;
+  const patientId = user?.rol === 'admin' ? params.get('pacienteUrgente') : null;
   const seconds = useBookingCountdown();
-  return seconds > 0 ? <><BackLink to="/mi-portal"/><BookingCountdown seconds={seconds}/></> : <TurnoForm/>;
+  return seconds > 0 ? <><BackLink to="/mi-portal"/><BookingCountdown seconds={seconds}/></> : originalId ? <ReferralForm id={originalId}/> : <TurnoForm referral={patientId ? { patientId } : undefined}/>;
 }
-function TurnoForm() {
+function ReferralForm({ id }: { id: string }) {
+  const { data, isLoading, error, refetch } = useFetch<ITurno>('/turnos/' + encodeURIComponent(id));
+  if (isLoading) return <Loading label="Cargando turno…"/>;
+  if (error) return <><BackLink to="/turnos"/><ErrorNotice message={error} retry={refetch}/></>;
+  if (!data?.paciente || data.estado !== 'pendiente') {
+    return <><BackLink to="/turnos"/><ErrorNotice message="Solo se pueden derivar turnos en espera con paciente asignado."/></>;
+  }
+  return <TurnoForm key={id} referral={{ patientId: data.paciente.id, original: data }}/>;
+}
+
+function TurnoForm({ referral }: { referral?: Referral }) {
   const { user } = useAuth();
   const [selectedSite, setSelectedSite] = useState('');
   const siteId = selectedSite || user?.salitaId || '';
   const query = user?.rol === 'cliente' ? '?salitaId=' + encodeURIComponent(siteId) : '';
   const sites = useFetch<Salita[]>('/salitas/publicas');
   const resource = useFetch<Paciente[]>('/pacientes');
-  const back = <BackLink to={user?.rol === 'cliente' ? '/mi-portal' : '/turnos'}/>;
+  const back = <BackLink to={user?.rol === 'cliente' ? '/mi-portal' : referral && !referral.original ? '/pacientes' : '/turnos'}/>;
   if (sites.isLoading || resource.isLoading) return <>{back}<Loading label="Cargando salitas y pacientes…"/></>;
   if (sites.error) return <>{back}<ErrorNotice message={sites.error} retry={sites.refetch}/></>;
   if (resource.error) return <>{back}<ErrorNotice message={resource.error} retry={resource.refetch}/></>;
@@ -53,29 +69,32 @@ function TurnoForm() {
         {sites.data?.map(site => <option key={site.id} value={site.id}>{site.nombre}</option>)}
       </Form.Select>
     </div>
-    <TurnoSiteForm key={siteId} query={query} patients={resource.data || []}/>
+    <TurnoSiteForm key={siteId} query={query} patients={resource.data || []} referral={referral}/>
   </>;
 }
-function TurnoSiteForm({ query, patients }: { query: string; patients: Paciente[] }) {
+function TurnoSiteForm({ query, patients, referral }: { query: string; patients: Paciente[]; referral?: Referral }) {
   const { user } = useAuth();
   const doctors = useFetch<Medico[]>('/medicos' + query);
   const rooms = useFetch<Consultorio[]>('/consultorios' + query);
   const resources = [doctors, rooms];
   if (resources.some(r => r.isLoading)) return <Loading label="Cargando pacientes, médicos y consultorios…"/>;
   if (resources.some(r => r.error)) return <>{resources.map((r, i) => r.error ? <ErrorNotice key={i} message={r.error} retry={r.refetch}/> : null)}</>;
-  const missing = [!patients.length && 'pacientes', !doctors.data?.length && 'medicos', !rooms.data?.length && 'consultorios'].filter(Boolean) as Entity[];
+  const referredPatient = referral?.original?.paciente ?? patients.find(item => item.id === referral?.patientId);
+  if (referral && !referredPatient) return <ErrorNotice message="No se encontró el paciente para derivar."/>;
+  const missing = [!referredPatient && !patients.length && 'pacientes', !doctors.data?.length && 'medicos', !rooms.data?.length && 'consultorios'].filter(Boolean) as Entity[];
   if (missing.length && user?.rol === 'cliente') return <div className="form-card"><h1>La agenda todavía no está disponible</h1><p>La sede seleccionada todavía debe registrar sus profesionales y consultorios para recibir turnos.</p></div>;
   if (missing.length) return <div className="form-card"><h1>Prepará tu primer turno</h1><p>Antes de reservar, necesitás registros en estas secciones:</p>{missing.map(key => <Link className="btn btn-outline-primary me-2 mb-2" key={key} to={`/${key}/nuevo`}>Crear {entities[key].singular}</Link>)}</div>;
   const options = (list: (Paciente | Medico)[]) => list.map(x => ({ value: x.id, label: `${x.nombre} ${x.apellido}${'especialidad' in x ? ` · ${x.especialidad}` : ` · DNI ${x.dni}`}` }));
   const patientOptions = options(patients);
-  const patient = patientOptions.find(option => option.value === user?.pacienteId);
-  return <FormBody entity="turnos" query={query} doctors={doctors.data || []} fields={[
-    { key: 'paciente', label: 'Paciente', options: patientOptions, fixed: user?.rol === 'cliente' ? patient : undefined, wide: true },
+  const patient = referredPatient ? options([referredPatient])[0] : patientOptions.find(option => option.value === user?.pacienteId);
+  return <FormBody entity="turnos" referral={referral} query={query} doctors={doctors.data || []} fields={[
+    { key: 'paciente', label: 'Paciente', options: patientOptions, fixed: user?.rol === 'cliente' || referral ? patient : undefined, wide: true },
     { key: 'medico', label: 'Médico', groups: doctorGroups(doctors.data || [], options), wide: true },
     { key: 'consultorio', label: 'Consultorio', fixed: { value: '', label: 'Se asigna al confirmar según disponibilidad en la salita' }, wide: true },
     { key: 'dia', label: 'Fecha (lunes a viernes)', type: 'date' },
     { key: 'franja', label: 'Turno', options: shifts.map(shift => ({ value: shift.id, label: shift.label })) },
     { key: 'fechaTurno', label: 'Hora', options: [] },
+    ...(referral ? [{ key: 'motivoDerivacion', label: 'Motivo de la derivación', type: 'textarea', wide: true }] : []),
     { key: 'observaciones', label: 'Observaciones', type: 'textarea', optional: true, wide: true },
   ]}/>;
 }
@@ -121,12 +140,12 @@ export function EditEntityForm({ entity }: { entity: 'medicos' | 'consultorios' 
   return <FormBody key={data.id} entity={entity} fields={fields[entity]} record={data}/>;
 }
 
-function FormBody({ entity, fields: formFields, record, query = '', doctors = [] }: { entity: Entity; fields: Field[]; record?: Medico | Consultorio; query?: string; doctors?: Medico[] }) {
+function FormBody({ entity, fields: formFields, record, referral, query = '', doctors = [] }: { entity: Entity; fields: Field[]; record?: Medico | Consultorio; referral?: Referral; query?: string; doctors?: Medico[] }) {
   const { updateBookingBlock } = useAuth();
   const config = entities[entity]; const Icon = config.icon; const navigate = useNavigate(); const formRef = useRef<HTMLFormElement>(null); const submitting = useRef(false);
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(formFields.map(field => {
     const [key, child] = field.key.split('.');
-    const value = child ? (record as Medico | undefined)?.telefono?.[child as keyof Medico['telefono']] :
+    const value = field.key === 'observaciones' && referral?.original ? referral.original.observaciones : child ? (record as Medico | undefined)?.telefono?.[child as keyof Medico['telefono']] :
       record?.[key as keyof (Medico | Consultorio)];
     return [field.key, typeof value === 'string' ? value : field.fixed?.value ?? ''];
   }))); const [errors, setErrors] = useState<Record<string, string>>({}); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
@@ -143,15 +162,17 @@ function FormBody({ entity, fields: formFields, record, query = '', doctors = []
     if (entity === 'turnos') {
       delete payload.consultorio;
       payload.fechaTurno = appointmentDate(values.dia, values.fechaTurno);
-    } const parsed = schemas[entity].safeParse(payload);
+    } const parsed = (referral ? derivacionTurnoSchema : schemas[entity]).safeParse(payload);
     if (!parsed.success) { const next: Record<string, string> = {}; for (const issue of parsed.error.issues) next[issue.path.join('.')] ??= issue.message; setErrors(next); focusError(next); return; }
     setErrors({}); submitting.current = true; setBusy(true);
     try {
-      const response = record
+      const response = referral?.original
+        ? await api.patch<ApiResponse<unknown>>('/turnos/' + encodeURIComponent(referral.original.id) + '/derivar', parsed.data)
+        : record
         ? await api.patch<ApiResponse<unknown>>(`/${entity}/${encodeURIComponent(record.id)}`, parsed.data)
         : await api.post<ApiResponse<unknown>>(`/${entity}${query}`, parsed.data);
       if (!response.data.ok) throw new Error(response.data.mensaje);
-      toast.success(record ? 'Cambios guardados.' : `${config.singular[0].toUpperCase() + config.singular.slice(1)} creado correctamente.`);
+      toast.success(referral ? 'Turno derivado con urgencia.' : record ? 'Cambios guardados.' : `${config.singular[0].toUpperCase() + config.singular.slice(1)} creado correctamente.`);
       navigate(`/${entity}`);
     }
     catch (error) {
@@ -162,14 +183,14 @@ function FormBody({ entity, fields: formFields, record, query = '', doctors = []
       const next = serverErrors(error); setErrors(next); setError(errorMessage(error)); toast.error(errorMessage(error)); if (Object.keys(next).length) focusError(next); }
     finally { submitting.current = false; setBusy(false); }
   }
-  return <>{entity !== 'turnos' && <Link to={`/${entity}`} className="back-link"><ArrowLeft size={16}/> Volver a {config.title.toLowerCase()}</Link>}<div className="page-heading"><div><span className="eyebrow">{record ? 'EDITAR REGISTRO' : 'NUEVO REGISTRO'}</span><h1>{record ? 'Editar' : 'Nuevo'} {config.singular}</h1><p>{record ? 'Actualizá los datos y guardá los cambios.' : 'Completá los datos para incorporarlo al sistema.'}</p></div></div><div className="form-layout"><section className="form-card"><div className="form-card-heading"><span className={`record-icon ${config.color}`}><Icon size={21}/></span><h2>Datos del {config.singular}</h2></div>{error && <ErrorNotice message={error}/>}<Form noValidate ref={formRef} onSubmit={submit}><div className="form-fields">{formFields.map(field => { const id = 'field-' + field.key.replaceAll('.', '-');
+  return <>{entity !== 'turnos' && <Link to={`/${entity}`} className="back-link"><ArrowLeft size={16}/> Volver a {config.title.toLowerCase()}</Link>}<div className="page-heading"><div><span className="eyebrow">{referral ? 'PRIORIDAD URGENTE' : record ? 'EDITAR REGISTRO' : 'NUEVO REGISTRO'}</span><h1>{referral ? 'Derivar con urgencia' : (record ? 'Editar ' : 'Nuevo ') + config.singular}</h1><p>{referral ? 'Elegí un profesional, un horario y registrá el motivo.' : record ? 'Actualizá los datos y guardá los cambios.' : 'Completá los datos para incorporarlo al sistema.'}</p></div></div><div className="form-layout"><section className="form-card"><div className="form-card-heading"><span className={`record-icon ${config.color}`}><Icon size={21}/></span><h2>Datos del {config.singular}</h2></div>{error && <ErrorNotice message={error}/>}<Form noValidate ref={formRef} onSubmit={submit}><div className="form-fields">{formFields.map(field => { const id = 'field-' + field.key.replaceAll('.', '-');
     const isTime = entity === 'turnos' && field.key === 'fechaTurno';
     const times = isTime ? appointmentTimes(values.dia, values.franja, doctor?.agenda)
       .filter(time => Date.parse(appointmentDate(values.dia, time)) > Date.now()) : [];
     const options = isTime ? times.map(time => ({ value: time, label: time })) : field.options; const props = { id, name: field.key, value: values[field.key] || '', disabled: busy || (isTime && !times.length), required: !field.optional && !field.fixed, isInvalid: !!errors[field.key], 'aria-describedby': errors[field.key] ? `${id}-error` : undefined, onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => { setValues(v => ({ ...v, [field.key]: event.target.value, ...(['medico', 'dia', 'franja'].includes(field.key) ? { fechaTurno: '' } : {}) })); setErrors(old => { const next = { ...old }; delete next[field.key]; return next; }); } }; return <Form.Group key={field.key} className={field.wide ? 'field-wide' : ''}><Form.Label htmlFor={id}>{field.label}{field.fixed ? null : field.optional ? <span className="optional"> · opcional</span> : <span className="required-mark"> *</span>}</Form.Label>{field.fixed ? <Form.Control {...props} value={field.fixed.label} readOnly/> : options || field.groups ? <Form.Select {...props}><option value="">{isTime && !times.length ? (values.dia && values.franja ? "Sin horarios para esa fecha y turno" : "Elegí fecha y turno") : "Seleccioná una opción"}</option>{options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       {field.groups?.map(group => <optgroup key={group.label} label={group.label}>
         {group.options.map(option => <option key={option.value || option.label} value={option.value} disabled={!option.value}>{option.label}</option>)}
-      </optgroup>)}</Form.Select> : field.type === 'textarea' ? <Form.Control {...props} as="textarea" rows={3} maxLength={entity === 'turnos' ? 500 : 300}/> : <Form.Control {...props} type={field.type || 'text'} placeholder={field.placeholder} inputMode={['dni', 'numero', 'direccion.numero', 'telefono.codigoArea', 'telefono.numero'].includes(field.key) ? 'numeric' : undefined}/>}<Form.Control.Feedback id={`${id}-error`} type="invalid">{errors[field.key]}</Form.Control.Feedback>
+      </optgroup>)}</Form.Select> : field.type === 'textarea' ? <Form.Control {...props} as="textarea" rows={3} maxLength={field.key === 'observaciones' ? 500 : 300}/> : <Form.Control {...props} type={field.type || 'text'} placeholder={field.placeholder} inputMode={['dni', 'numero', 'direccion.numero', 'telefono.codigoArea', 'telefono.numero'].includes(field.key) ? 'numeric' : undefined}/>}<Form.Control.Feedback id={`${id}-error`} type="invalid">{errors[field.key]}</Form.Control.Feedback>
       {field.key === 'medico' && doctor && <div className="mt-2">
         <strong>Horarios de atención</strong>
         {doctor.agenda ? <ul className="mb-0">
@@ -179,5 +200,5 @@ function FormBody({ entity, fields: formFields, record, query = '', doctors = []
       </div>}
     </Form.Group>; })}
     {entity === 'medicos' && <AgendaMedica slots={agenda} onChange={setAgenda} disabled={busy} error={errors.agenda}/>}
-    </div><div className="form-actions"><Link to={`/${entity}`} className={`btn btn-outline-secondary ${busy ? 'disabled' : ''}`} aria-disabled={busy}>Cancelar</Link><Button type="submit" disabled={busy}>{busy ? 'Guardando…' : <><Check size={17}/> Guardar {record ? 'cambios' : config.singular}</>}</Button></div></Form></section><aside className="form-help"><span className="record-icon teal"><Info size={21}/></span><h2>Los detalles hacen la diferencia.</h2><p>Los campos con asterisco son obligatorios. Revisá la información antes de guardar.</p>{entity === 'turnos' ? <p>Los turnos duran 30 minutos. El paciente, profesional y consultorio deben estar disponibles durante ese intervalo.</p> : <p>Los datos estarán disponibles en el listado apenas se confirme el guardado.</p>}<div className="help-divider"/><small>Este entorno educativo comienza con datos ficticios para practicar.</small></aside></div></>;
+    </div><div className="form-actions"><Link to={`/${entity}`} className={`btn btn-outline-secondary ${busy ? 'disabled' : ''}`} aria-disabled={busy}>Cancelar</Link><Button type="submit" disabled={busy}>{busy ? 'Guardando…' : <><Check size={17}/> Guardar {referral ? 'derivación' : record ? 'cambios' : config.singular}</>}</Button></div></Form></section><aside className="form-help"><span className="record-icon teal"><Info size={21}/></span><h2>Los detalles hacen la diferencia.</h2><p>Los campos con asterisco son obligatorios. Revisá la información antes de guardar.</p>{entity === 'turnos' ? <p>Los turnos duran 30 minutos. El paciente, profesional y consultorio deben estar disponibles durante ese intervalo.</p> : <p>Los datos estarán disponibles en el listado apenas se confirme el guardado.</p>}<div className="help-divider"/><small>Este entorno educativo comienza con datos ficticios para practicar.</small></aside></div></>;
 }

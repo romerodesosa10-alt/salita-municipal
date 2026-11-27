@@ -31,6 +31,9 @@ export const agendaMedicaSchema = z.array(z.object({
 export const medicoSchema = z.object({ nombre: text('Nombre'), apellido: text('Apellido'), matricula: z.string().trim().min(3, 'La matrícula debe tener al menos 3 caracteres.').max(30), especialidad: text('Especialidad'), email, telefono: phone, agenda: agendaMedicaSchema.optional() });
 export const consultorioSchema = z.object({ nombre: text('Nombre del consultorio'), numero: z.string().trim().regex(/^\d{1,4}$/, 'Ingresá un número de consultorio válido.'), ubicacion: text('Ubicación'), descripcion: z.string().trim().max(300, 'Máximo 300 caracteres.') });
 export const turnoSchema = z.object({ paciente: z.string().min(1, 'Seleccioná un paciente.'), medico: z.string().min(1, 'Seleccioná un médico.'), consultorio: z.string().min(1).optional(), fechaTurno: z.string().refine(s => Number.isFinite(Date.parse(s)), 'Ingresá una fecha y hora válida.').refine(s => Date.parse(s) > Date.now(), 'El turno debe ser a futuro.'), observaciones: z.string().trim().max(500, 'Máximo 500 caracteres.') });
+export const derivacionTurnoSchema = turnoSchema.extend({
+  motivoDerivacion: z.string().trim().min(1, 'Ingresá el motivo de la derivación.').max(300, 'Máximo 300 caracteres.'),
+});
 export const schemas = { pacientes: pacienteSchema, medicos: medicoSchema, consultorios: consultorioSchema, turnos: turnoSchema };
 export type Entity = keyof typeof schemas;
 export type PacienteInput = z.infer<typeof pacienteSchema>;
@@ -54,7 +57,7 @@ export const estadoTurnoLabels: Record<EstadoTurno, string> = {
   cancelado: 'Cancelado',
 };
 
-export interface ITurno { id: string; salitaNombre?: string; motivoCancelacion?: string; paciente: Paciente | null; medico: Medico | null; consultorio: Consultorio | null; fechaTurno: string; estado: EstadoTurno; especialidad: string; observaciones: string }
+export interface ITurno { id: string; salitaNombre?: string; motivoCancelacion?: string; derivacion?: { motivo: string; administradorId: string; administradorNombre: string; fecha: string }; paciente: Paciente | null; medico: Medico | null; consultorio: Consultorio | null; fechaTurno: string; estado: EstadoTurno; especialidad: string; observaciones: string }
 export interface EntityMap { pacientes: Paciente; medicos: Medico; consultorios: Consultorio; turnos: ITurno }
 export type Role = 'superadmin' | 'admin' | 'cliente';
 export interface User { id: string; nombre: string; usuario: string; rol: Role; salitaId: string | null; salitaNombre: string | null; pacienteId: string | null; turnosBloqueadosHasta?: string }

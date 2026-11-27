@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from '
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appointmentMinutes, isScheduledAppointment } from '../shared/agenda.ts';
-import { cancelarTurnoSchema, estadoPacienteSchema, estadoTurnoSchema, eliminarSeleccionSchema, schemas } from '../shared/schemas.ts';
+import { cancelarTurnoSchema, derivacionTurnoSchema, estadoPacienteSchema, estadoTurnoSchema, eliminarSeleccionSchema, schemas } from '../shared/schemas.ts';
 import { initializeAccounts, accountService } from './accounts.mjs';
 import express from 'express';
 import { openMongoStore } from './mongo-store.mjs';
@@ -71,7 +71,7 @@ async function handleApi(req, res) {
     const actor = accounts.authenticate(req);
     if (!actor) return respond(res, 401, 'Tu sesión venció. Volvé a ingresar.');
     if (await accounts.privateRoute(path, req, res, actor)) return;
-    const match = path.match(/^\/api\/v1\/(pacientes|medicos|consultorios|turnos)(?:\/([^/]+))?(?:\/(atender|estado|cancelar))?$/);
+    const match = path.match(/^\/api\/v1\/(pacientes|medicos|consultorios|turnos)(?:\/([^/]+))?(?:\/(atender|estado|cancelar|derivar))?$/);
     if (!match) return respond(res, 404, 'La ruta no existe.');
     const [, entity, id, action] = match;
     const requestedSite = url.searchParams.get('salitaId');
@@ -154,13 +154,27 @@ async function handleApi(req, res) {
       return respond(res, 200, 'Consulta realizada.', id ? data[0] : data);
     }
     const editing = req.method === 'PATCH' && id && !action && ['medicos', 'consultorios'].includes(entity);
-    if (editing || (req.method === 'POST' && !id)) {
+    const reassigning = entity === 'turnos' && id && action === 'derivar' && req.method === 'PATCH';
+    if (editing || reassigning || (req.method === 'POST' && !id)) {
+      const body = await readBody(req);
+      const urgent = entity === 'turnos' && (reassigning || (body && Object.hasOwn(body, 'motivoDerivacion')));
+      if (urgent && actor.rol !== 'admin') return respond(res, 403, 'Solo la administración de la salita puede derivar turnos.');
+      const original = reassigning ? scoped.find(row => row.id === id) : undefined;
+      if (reassigning && !original) return respond(res, 404, 'No se encontró el turno.');
+      if (original && original.estado !== 'pendiente') return respond(res, 409, 'Solo se pueden derivar turnos en espera.');
       if (editing && actor.rol !== 'admin') return respond(res, 403, 'Solo la administración de la salita puede editar estos registros.');
       const existing = editing ? scoped.find(row => row.id === id) : undefined;
       if (editing && !existing) return respond(res, 404, 'No se encontró el registro.');
-      const result = schemas[entity].safeParse(await readBody(req));
+      const result = (urgent ? derivacionTurnoSchema : schemas[entity]).safeParse(body);
       if (!result.success) { const errors = {}; for (const issue of result.error.issues) errors[issue.path.join('.')] ??= issue.message; return respond(res, 400, 'Revisá los campos del formulario.', null, errors); }
-      const data = result.data;
+      const { motivoDerivacion, ...data } = result.data;
+      if (original && original.paciente !== data.paciente) return respond(res, 400, 'La derivación debe corresponder al paciente del turno.');
+      const derivacion = urgent ? {
+        motivo: motivoDerivacion,
+        administradorId: actor.id,
+        administradorNombre: actor.nombre,
+        fecha: new Date().toISOString(),
+      } : undefined;
       const unique = { pacientes: 'dni', medicos: 'matricula', consultorios: 'numero' }[entity];
       if (unique && db[entity].some(x => x.id !== existing?.id && x.salitaId === salitaId && x[unique].toLowerCase() === data[unique].toLowerCase())) return respond(res, 409, 'Ya existe un registro con ese dato.', null, { [unique]: 'Este valor ya está registrado.' });
       if (existing) {
@@ -179,7 +193,7 @@ async function handleApi(req, res) {
         if (actor.rol === 'cliente' && data.paciente !== actor.pacienteId) return respond(res, 403, 'Solo podés solicitar turnos para tu propia cuenta.');
         const errors = {};
         const patient = db.pacientes.find(x => x.id === data.paciente);
-        if (!patient || patient.archivado || (actor.rol !== 'cliente' && patient.salitaId !== salitaId)) errors.paciente = 'El paciente seleccionado no existe.';
+        if (!patient || patient.archivado || (actor.rol !== 'cliente' && !original && patient.salitaId !== salitaId)) errors.paciente = 'El paciente seleccionado no existe.';
         const doctor = db.medicos.find(x => x.id === data.medico && !x.archivado && x.salitaId === salitaId);
         if (!doctor) errors.medico = 'El médico seleccionado no atiende en esta salita.';
         const rooms = db.consultorios.filter(x => !x.archivado && x.salitaId === salitaId);
@@ -189,7 +203,7 @@ async function handleApi(req, res) {
         if (Object.keys(errors).length) return respond(res, 400, 'Revisá las selecciones.', null, errors);
 
         const startTime = Date.parse(data.fechaTurno);
-        const overlapping = db.turnos.filter(x => !x.archivado && x.estado === 'pendiente' &&
+        const overlapping = db.turnos.filter(x => x.id !== original?.id && !x.archivado && x.estado === 'pendiente' &&
           Math.abs(Date.parse(x.fechaTurno) - startTime) < appointmentMinutes * 60 * 1000);
         const conflict = overlapping.some(x => x.medico === data.medico || x.paciente === data.paciente);
         if (conflict) return respond(res, 409, 'El paciente o el médico ya tiene un turno en ese horario. Elegí otro.');
@@ -198,7 +212,14 @@ async function handleApi(req, res) {
         if (!available) return respond(res, 409, 'No hay consultorios libres en esta salita para ese horario.');
         data.consultorio = available.id;
       }
-      const record = { ...data, id: randomUUID(), salitaId, ...(entity === 'turnos' ? { fechaTurno: new Date(data.fechaTurno).toISOString(), estado: 'pendiente' } : {}) };
+      if (original) {
+        const index = db.turnos.indexOf(original);
+        const updated = { ...original, ...data, fechaTurno: new Date(data.fechaTurno).toISOString(), derivacion };
+        db.turnos[index] = updated;
+        try { await save(); } catch (error) { db.turnos[index] = original; throw error; }
+        return respond(res, 200, 'Turno derivado con urgencia.', populate(updated));
+      }
+      const record = { ...data, ...(derivacion ? { derivacion } : {}), id: randomUUID(), salitaId, ...(entity === 'turnos' ? { fechaTurno: new Date(data.fechaTurno).toISOString(), estado: 'pendiente' } : {}) };
       db[entity].push(record); try { await save(); } catch (error) { db[entity].pop(); throw error; }
       return respond(res, 201, 'Registro creado correctamente.', entity === 'turnos' ? populate(record) : record);
     }
