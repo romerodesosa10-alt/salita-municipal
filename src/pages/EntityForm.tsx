@@ -88,15 +88,16 @@ function TurnoSiteForm({ query, patients, referral }: { query: string; patients:
   if (missing.length) return <div className="form-card"><h1>Prepará tu primer turno</h1><p>Antes de reservar, necesitás registros en estas secciones:</p>{missing.filter(key => key !== 'consultorios').map(key => <Link className="btn btn-outline-primary me-2 mb-2" key={key} to={`/${key}/nuevo`}>Crear {entities[key].singular}</Link>)}{missing.includes('consultorios') && <p>Cargá el consultorio desde <Link to="/medicos">Médicos</Link>, al registrar o editar un profesional.</p>}</div>;
   const options = (list: (Paciente | Medico)[]): Option[] => list.map(person => {
     const onLeave = 'especialidad' in person && person.estado === 'de-licencia';
+    const withoutRoom = 'especialidad' in person && !person.consultorioAsignado;
     const detail = 'especialidad' in person ? person.especialidad : 'DNI ' + person.dni;
-    return { value: person.id, label: [person.nombre + ' ' + person.apellido, detail, ...(onLeave ? ['De licencia'] : [])].join(' · '), disabled: onLeave };
+    return { value: person.id, label: [person.nombre + ' ' + person.apellido, detail, ...(onLeave ? ['De licencia'] : withoutRoom ? ['Sin consultorio asignado'] : [])].join(' · '), disabled: onLeave || withoutRoom };
   });
   const patientOptions = options(patients);
   const patient = referredPatient ? options([referredPatient])[0] : patientOptions.find(option => option.value === user?.pacienteId);
   return <FormBody entity="turnos" referral={referral} query={query} doctors={doctors.data || []} fields={[
     { key: 'paciente', label: 'Paciente', options: patientOptions, fixed: user?.rol === 'cliente' || referral ? patient : undefined, wide: true },
     { key: 'medico', label: 'Médico', groups: doctorGroups(doctors.data || [], options), wide: true },
-    { key: 'consultorio', label: 'Consultorio', fixed: { value: '', label: 'Se asigna al confirmar según disponibilidad en la salita' }, wide: true },
+    { key: 'consultorio', label: 'Consultorio', fixed: { value: '', label: 'Elegí un profesional para ver su consultorio' }, wide: true },
     { key: 'franja', label: 'Turno', options: shifts.map(shift => ({ value: shift.id, label: shift.label })) },
     { key: 'fechaTurno', label: 'Fecha y horario', wide: true },
     ...(referral ? [{ key: 'motivoDerivacion', label: 'Motivo de la derivación', type: 'textarea', wide: true }] : []),
@@ -244,7 +245,9 @@ function FormBody({ entity, fields: formFields, record, referral, query = '', do
           }}
           busy={busy || checkingSlots} error={availabilityError || errors.fechaTurno}/>}
     </fieldset>;
-    const options = field.options; const props = { id, name: field.key, value: values[field.key] || '', disabled: busy, required: !field.optional && !field.fixed, isInvalid: !!errors[field.key], 'aria-describedby': errors[field.key] ? `${id}-error` : undefined, onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => { setValues(v => ({ ...v, [field.key]: event.target.value, ...(['medico', 'franja', 'paciente'].includes(field.key) ? { fechaTurno: '' } : {}) })); setErrors(old => { const next = { ...old }; delete next[field.key]; return next; }); } }; return <Form.Group key={field.key} className={field.wide ? 'field-wide' : ''}><Form.Label htmlFor={id}>{field.label}{field.fixed ? null : field.optional ? <span className="optional"> · opcional</span> : <span className="required-mark"> *</span>}</Form.Label>{field.fixed ? <Form.Control {...props} value={field.fixed.label} readOnly/> : options || field.groups ? <Form.Select {...props}><option value="">Seleccioná una opción</option>{options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    const options = field.options; const props = { id, name: field.key, value: values[field.key] || '', disabled: busy, required: !field.optional && !field.fixed, isInvalid: !!errors[field.key], 'aria-describedby': errors[field.key] ? `${id}-error` : undefined, onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => { setValues(v => ({ ...v, [field.key]: event.target.value, ...(['medico', 'franja', 'paciente'].includes(field.key) ? { fechaTurno: '' } : {}) })); setErrors(old => { const next = { ...old }; delete next[field.key]; return next; }); } }; return <Form.Group key={field.key} className={field.wide ? 'field-wide' : ''}><Form.Label htmlFor={id}>{field.label}{field.fixed ? null : field.optional ? <span className="optional"> · opcional</span> : <span className="required-mark"> *</span>}</Form.Label>{field.fixed ? <Form.Control {...props} value={field.key === 'consultorio' && doctor?.consultorioAsignado
+      ? doctor.consultorioAsignado.nombre + ' · N.º ' + doctor.consultorioAsignado.numero + ' · ' + doctor.consultorioAsignado.ubicacion
+      : field.fixed.label} readOnly/> : options || field.groups ? <Form.Select {...props}><option value="">Seleccioná una opción</option>{options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       {field.groups?.map(group => <optgroup key={group.label} label={group.label}>
         {group.options.map(option => <option key={option.value || option.label} value={option.value} disabled={!option.value || option.disabled}>{option.label}</option>)}
       </optgroup>)}</Form.Select> : field.type === 'textarea' ? <Form.Control {...props} as="textarea" rows={3} maxLength={field.key === 'observaciones' ? 500 : 300}/> : <Form.Control {...props} type={field.type || 'text'} placeholder={field.placeholder} inputMode={['dni', 'numero', 'direccion.numero', 'telefono.codigoArea', 'telefono.numero'].includes(field.key) ? 'numeric' : undefined}/>}<Form.Control.Feedback id={`${id}-error`} type="invalid">{errors[field.key]}</Form.Control.Feedback>

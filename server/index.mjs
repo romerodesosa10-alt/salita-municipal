@@ -20,7 +20,7 @@ const dataPath = process.env.DATA_FILE || fileURLToPath(new URL('./data/salita.j
 const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); tomorrow.setHours(9, 0, 0, 0);
 const seed = {
   pacientes: [{ id: 'paciente-demo', nombre: 'Paciente', apellido: 'de ejemplo', dni: '99999999', email: 'paciente@example.test', telefono: { codigoArea: '3492', numero: '5550101' }, direccion: { calle: 'Calle de ejemplo', numero: '100', barrio: 'Centro' }, obraSocial: { nombre: 'Sin obra social', numeroAfiliado: '' } }],
-  medicos: [{ id: 'medico-demo', nombre: 'Profesional', apellido: 'de ejemplo', matricula: 'DEMO-001', especialidad: 'Clínica médica', email: 'medico@example.test', telefono: { codigoArea: '3492', numero: '5550102' } }],
+  medicos: [{ id: 'medico-demo', nombre: 'Profesional', apellido: 'de ejemplo', matricula: 'DEMO-001', consultorioId: 'consultorio-demo', especialidad: 'Clínica médica', email: 'medico@example.test', telefono: { codigoArea: '3492', numero: '5550102' } }],
   consultorios: [{ id: 'consultorio-demo', nombre: 'Consultorio general', numero: '1', ubicacion: 'Planta baja', descripcion: 'Atención general' }],
   turnos: [{ id: 'turno-demo', paciente: 'paciente-demo', medico: 'medico-demo', consultorio: 'consultorio-demo', fechaTurno: tomorrow.toISOString(), estado: 'pendiente', observaciones: 'Registro ficticio para practicar.' }],
 };
@@ -117,7 +117,7 @@ async function handleApi(req, res) {
           const startsAt = appointmentDate(date, time);
           if (Date.parse(startsAt) <= now) return [];
           const overlapping = overlappingAppointments(startsAt, original?.id);
-          const free = doctor.estado !== 'de-licencia' && !overlapping.some(row => row.medico === doctor.id || row.paciente === patientId) &&
+          const free = Boolean(doctor.consultorioId) && doctor.estado !== 'de-licencia' && !overlapping.some(row => row.medico === doctor.id || row.paciente === patientId) &&
             Boolean(availableRoom(rooms, overlapping, doctor.consultorioId));
           return [{ time, available: free }];
         });
@@ -212,7 +212,25 @@ async function handleApi(req, res) {
       const selected = id ? scoped.filter(x => x.id === id) : url.searchParams.has('id') ? scoped.filter(x => x.id === url.searchParams.get('id')) : scoped;
       if (id && !selected.length) return respond(res, 404, 'No se encontró el registro.');
       let data = entity === 'turnos' ? selected.map(populate) : selected;
-      if (actor.rol === 'cliente' && entity === 'medicos') data = selected.map(({ id, nombre, apellido, especialidad, agenda, estado }) => ({ id, nombre, apellido, especialidad, agenda, estado }));
+      if (entity === 'medicos') {
+        data = selected.map(doctor => {
+          const room = db.consultorios.find(item =>
+            item.id === doctor.consultorioId && item.salitaId === doctor.salitaId && !item.archivado);
+          const consultorioAsignado = room && { nombre: room.nombre, numero: room.numero, ubicacion: room.ubicacion };
+          const { id, nombre, apellido, especialidad, agenda, estado } = doctor;
+          return actor.rol === 'cliente'
+            ? { id, nombre, apellido, especialidad, agenda, estado, consultorioAsignado }
+            : { ...doctor, consultorioAsignado };
+        });
+      }
+      if (entity === 'consultorios' && actor.rol === 'admin') {
+        data = selected.map(room => ({
+          ...room,
+          medicosAsignados: db.medicos.filter(doctor =>
+            !doctor.archivado && doctor.salitaId === room.salitaId && doctor.consultorioId === room.id)
+            .map(doctor => ({ id: doctor.id, nombre: doctor.nombre + ' ' + doctor.apellido })),
+        }));
+      }
       return respond(res, 200, 'Consulta realizada.', id ? data[0] : data);
     }
     const editing = req.method === 'PATCH' && id && !action && ['medicos', 'consultorios'].includes(entity);
@@ -290,7 +308,10 @@ async function handleApi(req, res) {
         if (doctor.consultorioId && data.consultorio && doctor.consultorioId !== data.consultorio) {
           return respond(res, 400, 'Usá el consultorio asignado al profesional.');
         }
-        const available = availableRoom(rooms, overlapping, doctor.consultorioId || data.consultorio);
+        if (!doctor.consultorioId) {
+          return respond(res, 409, 'El profesional todavía no tiene un consultorio asignado.');
+        }
+        const available = availableRoom(rooms, overlapping, doctor.consultorioId);
         if (!available) return respond(res, 409, 'No hay consultorios libres en esta salita para ese horario.');
         data.consultorio = available.id;
       }
